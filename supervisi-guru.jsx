@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const DEFAULT_INDIKATOR = [
   { id: 1, kat: "A", judul: "Kesesuaian CP–ATP–Modul Ajar", catatan: { 1: "Modul ajar tidak sesuai dengan CP dan ATP; tujuan pembelajaran tidak terdefinisi.", 2: "Modul ajar cukup sesuai CP dan ATP, namun tujuan pembelajaran masih kurang jelas.", 3: "Modul ajar sesuai CP dan ATP, tujuan pembelajaran jelas namun perlu sedikit penyempurnaan.", 4: "Modul ajar sesuai CP dan ATP, tujuan pembelajaran jelas, runtut, dan terukur." }},
@@ -125,6 +125,92 @@ function loadScript(src) {
     s.src = src; s.onload = resolve; s.onerror = reject;
     document.head.appendChild(s);
   });
+}
+async function ensureTesseract() {
+  if (window.Tesseract) return window.Tesseract;
+  await loadScript("https://unpkg.com/tesseract.js@4.1.3/dist/tesseract.min.js");
+  if (!window.Tesseract) throw new Error("Tesseract tidak tersedia");
+  return window.Tesseract;
+}
+async function recognizeTextFromFile(file, onProgress) {
+  const T = await ensureTesseract();
+  const worker = T.createWorker({
+    logger: (m) => {
+      if (onProgress) onProgress(m.progress || 0, m.status || "Memproses gambar...");
+    },
+  });
+  await worker.load();
+  await worker.loadLanguage("eng");
+  await worker.initialize("eng");
+  const { data } = await worker.recognize(file);
+  await worker.terminate();
+  return data.text;
+}
+function normalizeOcrText(text) {
+  return text
+    .replace(/\r/g, "")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/–/g, "-")
+    .replace(/\t/g, " ")
+    .replace(/ +/g, " ")
+    .replace(/ *\n */g, "\n")
+    .trim();
+}
+function findFieldValue(text, labels) {
+  for (const label of labels) {
+    const regex = new RegExp(label + "\\s*[:\\-]?\\s*([^\\n\\r]+)", "i");
+    const match = text.match(regex);
+    if (match && match[1]) return match[1].trim();
+  }
+  return "";
+}
+function parseScoresFromText(text) {
+  const skor = {};
+  DEFAULT_INDIKATOR.forEach((ind) => { skor[ind.id] = 0; });
+  const lines = text.split(/\n/).map((line) => line.trim()).filter(Boolean);
+  const matches = [];
+
+  for (const line of lines) {
+    const exact = line.match(/^\s*(\d{1,2})\D*([1-4])\b/);
+    if (exact) {
+      matches.push({ id: Number(exact[1]), score: Number(exact[2]) });
+      continue;
+    }
+    const loose = line.match(/\b([1-4])\b/);
+    if (loose) {
+      matches.push({ score: Number(loose[1]) });
+    }
+  }
+
+  if (matches.length >= 20 && matches.every((item) => item.score >= 1 && item.score <= 4)) {
+    matches.slice(0, 20).forEach((item, index) => {
+      const id = item.id >= 1 && item.id <= 20 ? item.id : DEFAULT_INDIKATOR[index].id;
+      skor[id] = item.score;
+    });
+    return skor;
+  }
+
+  const found = [...text.matchAll(/\b([1-4])\b/g)].map((m) => Number(m[1]));
+  found.slice(0, 20).forEach((score, index) => {
+    skor[DEFAULT_INDIKATOR[index].id] = score;
+  });
+  return skor;
+}
+function parseScanText(rawText) {
+  const text = normalizeOcrText(rawText);
+  const info = {
+    nama: findFieldValue(text, ["Nama Guru", "Nama"].map((t) => t.replace(/ /g, "\\s*"))),
+    mapel: findFieldValue(text, ["Mata Pelajaran", "Mapel"].map((t) => t.replace(/ /g, "\\s*"))),
+    kelas: findFieldValue(text, ["Kelas / Program", "Kelas", "Program"].map((t) => t.replace(/ /g, "\\s*"))),
+    tanggal: findFieldValue(text, ["Tanggal Supervisi", "Tanggal"].map((t) => t.replace(/ /g, "\\s*"))),
+    supervisor: findFieldValue(text, ["Supervisor", "Pengawas"].map((t) => t.replace(/ /g, "\\s*"))),
+  };
+  const skor = parseScoresFromText(text);
+  const scoreCount = Object.values(skor).filter((value) => value > 0).length;
+  const fieldCount = Object.values(info).filter(Boolean).length;
+  const confidence = Math.round(((scoreCount / 20) * 0.7 + (fieldCount / 5) * 0.3) * 100);
+  return { info, skor, confidence, text };
 }
 async function ensureJsPDF() {
   await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
@@ -439,17 +525,146 @@ function Modal({onClose,children}){
   </div>);
 }
 
-function FormSupervisi({guru,indikator,onSave,onClose}){
+function ScanSupervisiModal({onClose,onApply}){
+  const fileRef=useRef(null);
+  const[file,setFile]=useState(null);
+  const[previewUrl,setPreviewUrl]=useState("");
+  const[processing,setProcessing]=useState(false);
+  const[progress,setProgress]=useState(0);
+  const[status,setStatus]=useState("Siap memproses foto supervisi.");
+  const[result,setResult]=useState(null);
+  const[errMsg,setErrMsg]=useState("");
+
+  useEffect(()=>()=>{if(previewUrl)URL.revokeObjectURL(previewUrl);},[previewUrl]);
+
+  const onFileSelected=(nextFile)=>{
+    if(!nextFile)return;
+    setResult(null);
+    setErrMsg("");
+    setProgress(0);
+    setStatus("Foto dipilih, siap diproses.");
+    if(previewUrl)URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(URL.createObjectURL(nextFile));
+    setFile(nextFile);
+  };
+
+  const runOcr=async()=>{
+    if(!file)return alert("Pilih foto terlebih dahulu.");
+    setProcessing(true);
+    setErrMsg("");
+    setResult(null);
+    try{
+      const text=await recognizeTextFromFile(file,(p,s)=>{
+        setProgress(Math.round((p||0)*100));
+        if(s)setStatus(s);
+      });
+      const parsed=parseScanText(text);
+      setResult(parsed);
+      setStatus("Scan selesai. Silakan cek hasilnya sebelum lanjut.");
+      if(parsed.confidence<45)setErrMsg("Akurasi scan masih rendah. Coba foto lebih terang dan tegak lurus.");
+    }catch{
+      setErrMsg("Gagal memproses foto. Pastikan koneksi internet stabil lalu coba lagi.");
+    }finally{
+      setProcessing(false);
+    }
+  };
+
+  const scoreCount=result?Object.values(result.skor).filter(v=>v>0).length:0;
+
+  return(<Modal onClose={onClose}>
+    <div style={{background:"linear-gradient(135deg,#0f2447,#2563eb)",borderRadius:"16px 16px 0 0",padding:"18px 22px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <div>
+          <div style={{color:"#93c5fd",fontSize:11,fontWeight:600,textTransform:"uppercase"}}>Input Cepat via Kamera HP</div>
+          <div style={{color:"#fff",fontSize:18,fontWeight:700}}>Scan Kertas Supervisi Guru</div>
+        </div>
+        <button onClick={onClose} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",borderRadius:8,padding:"7px 14px",cursor:"pointer"}}>Tutup</button>
+      </div>
+    </div>
+
+    <div style={{padding:"20px 22px",display:"grid",gridTemplateColumns:"1.1fr 1fr",gap:14}}>
+      <div style={{border:"1.5px solid #dbeafe",borderRadius:12,padding:14,background:"#f8fbff"}}>
+        <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={e=>onFileSelected(e.target.files?.[0])} style={{display:"none"}}/>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+          <button onClick={()=>fileRef.current?.click()} style={{border:"none",background:"#2563eb",color:"#fff",borderRadius:8,padding:"9px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>Ambil/Pilih Foto</button>
+          <button onClick={runOcr} disabled={!file||processing} style={{border:"none",background:!file||processing?"#94a3b8":"#0f766e",color:"#fff",borderRadius:8,padding:"9px 14px",fontWeight:700,cursor:!file||processing?"not-allowed":"pointer",fontSize:13}}>{processing?"Memproses...":"Proses OCR"}</button>
+        </div>
+
+        {!previewUrl?(
+          <div style={{border:"2px dashed #bfdbfe",borderRadius:10,minHeight:220,display:"flex",alignItems:"center",justifyContent:"center",textAlign:"center",color:"#64748b",padding:16,fontSize:13}}>
+            Foto lembar supervisi akan tampil di sini.
+            <br/>Gunakan kamera HP agar teks lebih jelas.
+          </div>
+        ):(
+          <img src={previewUrl} alt="Preview supervisi" style={{width:"100%",borderRadius:10,border:"1px solid #cbd5e1",maxHeight:360,objectFit:"contain",background:"#fff"}}/>
+        )}
+
+        <div style={{marginTop:10,fontSize:12,color:"#475569"}}>Status: <strong>{status}</strong></div>
+        <div style={{marginTop:8,height:8,borderRadius:999,background:"#dbeafe",overflow:"hidden"}}>
+          <div style={{height:"100%",width:`${progress}%`,background:"linear-gradient(90deg,#2563eb,#0ea5e9)",transition:"width 0.2s"}}/>
+        </div>
+      </div>
+
+      <div style={{border:"1.5px solid #e2e8f0",borderRadius:12,padding:14,background:"#fff"}}>
+        <div style={{fontSize:12,fontWeight:700,color:"#1e3a5f",textTransform:"uppercase",marginBottom:10}}>Hasil Ekstraksi</div>
+        {!result?(
+          <div style={{fontSize:13,color:"#64748b",lineHeight:1.6}}>Setelah OCR selesai, sistem akan menampilkan data guru dan jumlah skor yang berhasil dibaca.</div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {[{k:"nama",l:"Nama Guru"},{k:"mapel",l:"Mapel"},{k:"kelas",l:"Kelas"},{k:"tanggal",l:"Tanggal"},{k:"supervisor",l:"Supervisor"}].map(item=>(
+                <div key={item.k} style={item.k==="supervisor"?{gridColumn:"1/-1"}:{}}>
+                  <div style={{fontSize:11,color:"#64748b"}}>{item.l}</div>
+                  <div style={{fontSize:13,fontWeight:600,color:"#0f172a"}}>{result.info[item.k]||"-"}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,padding:"10px 12px",fontSize:13,color:"#1e3a8a"}}>
+              Skor terbaca: <strong>{scoreCount} / 20</strong><br/>
+              Estimasi akurasi: <strong>{result.confidence}%</strong>
+            </div>
+            <button onClick={()=>onApply(result)} style={{border:"none",background:"linear-gradient(135deg,#1e3a5f,#2563eb)",color:"#fff",borderRadius:10,padding:"10px 14px",fontWeight:700,cursor:"pointer"}}>Gunakan Hasil Scan</button>
+          </div>
+        )}
+        {errMsg&&<div style={{marginTop:10,fontSize:12,color:"#b91c1c",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"8px 10px"}}>{errMsg}</div>}
+      </div>
+    </div>
+  </Modal>);
+}
+
+function FormSupervisi({guru,indikator,onSave,onClose,seedData}){
   const initSkor={};
-  indikator.forEach(ind=>{initSkor[ind.id]=guru?.skor?.[ind.id]||0;});
+  indikator.forEach(ind=>{initSkor[ind.id]=0;});
+  if(seedData?.skor){indikator.forEach(ind=>{initSkor[ind.id]=seedData.skor?.[ind.id]||0;});}
+  if(guru?.skor){indikator.forEach(ind=>{initSkor[ind.id]=guru.skor?.[ind.id]||0;});}
   const[skor,setSkor]=useState(initSkor);
-  const[info,setInfo]=useState({nama:guru?.nama||"",mapel:guru?.mapel||"",kelas:guru?.kelas||"",tanggal:guru?.tanggal||"",supervisor:guru?.supervisor||""});
+  const[info,setInfo]=useState({
+    nama:guru?.nama||seedData?.info?.nama||"",
+    mapel:guru?.mapel||seedData?.info?.mapel||"",
+    kelas:guru?.kelas||seedData?.info?.kelas||"",
+    tanggal:guru?.tanggal||seedData?.info?.tanggal||"",
+    supervisor:guru?.supervisor||seedData?.info?.supervisor||""
+  });
   const total=Object.values(skor).reduce((a,b)=>a+(b||0),0);
   const persen=((total/SKOR_MAX)*100).toFixed(2);
   const pred=getPred(parseFloat(persen));
   const selesai=Object.values(skor).every(v=>v>0);
   const katGroups={};
   indikator.forEach(ind=>{if(!katGroups[ind.kat])katGroups[ind.kat]=[];katGroups[ind.kat].push(ind);});
+  const scanCount=seedData?Object.values(seedData.skor||{}).filter(v=>v>0).length:0;
+
+  useEffect(()=>{
+    if(!seedData)return;
+    setInfo(prev=>({...prev,...(seedData.info||{})}));
+    setSkor(prev=>{
+      const next={...prev};
+      indikator.forEach(ind=>{
+        const v=Number(seedData.skor?.[ind.id]||0);
+        if(v>=1&&v<=4)next[ind.id]=v;
+      });
+      return next;
+    });
+  },[seedData,indikator]);
 
   return(<Modal onClose={onClose}>
     <div style={{background:"linear-gradient(135deg,#1e3a5f,#2563eb)",borderRadius:"16px 16px 0 0",padding:"20px 24px"}}>
@@ -471,6 +686,9 @@ function FormSupervisi({guru,indikator,onSave,onClose}){
           ))}
         </div>
       </div>
+      {seedData&&<div style={{background:"#eff6ff",border:"1.5px solid #bfdbfe",borderRadius:10,padding:"10px 12px",color:"#1e3a8a",fontSize:12}}>
+        Data terisi dari hasil scan: <strong>{scanCount}/20 skor</strong> terdeteksi, estimasi akurasi <strong>{seedData.confidence||0}%</strong>. Periksa kembali sebelum menyimpan.
+      </div>}
       {Object.entries(katGroups).map(([kat,inds])=>(
         <div key={kat}>
           <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:10}}>
@@ -599,6 +817,7 @@ export default function App(){
   const[filter,setFilter]=useState("");
   const[saved,setSaved]=useState(false);
   const[expRekap,setExpRekap]=useState(false);
+  const[scanSeed,setScanSeed]=useState(null);
 
   useEffect(()=>{(async()=>{
     try{const g=await storageApi.get("guru-list");if(g)setGuruList(JSON.parse(g.value));}catch{}
@@ -611,7 +830,7 @@ export default function App(){
 
   const handleSave=(data)=>{
     const newList=modal==="edit"&&selGuru!==null?guruList.map((g,i)=>i===selGuru?data:g):[...guruList,data];
-    saveGuru(newList);setSaved(true);setTimeout(()=>setSaved(false),2000);setModal(null);setSelGuru(null);
+    saveGuru(newList);setSaved(true);setTimeout(()=>setSaved(false),2000);setModal(null);setSelGuru(null);setScanSeed(null);
   };
   const handleDel=(idx)=>{if(!confirm("Hapus data guru ini?"))return;saveGuru(guruList.filter((_,i)=>i!==idx));};
 
@@ -637,8 +856,9 @@ export default function App(){
               style={{background:expRekap?"#4b5563":"#dc2626",border:"none",color:"#fff",borderRadius:10,padding:"9px 15px",cursor:"pointer",fontWeight:700,fontSize:13}}>
               {expRekap?"⏳ Proses...":"📄 Export Rekap PDF"}
             </button>
+            <button onClick={()=>{setSelGuru(null);setModal("scan");}} style={{background:"#0f766e",border:"none",color:"#fff",borderRadius:10,padding:"9px 15px",cursor:"pointer",fontWeight:700,fontSize:13}}>📷 Scan Kertas</button>
             <button onClick={()=>setModal("catatan")} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"#fff",borderRadius:10,padding:"9px 15px",cursor:"pointer",fontWeight:600,fontSize:13}}>⚙️ Kelola Catatan</button>
-            <button onClick={()=>{setSelGuru(null);setModal("tambah");}} style={{background:"#fff",border:"none",color:"#1e3a5f",borderRadius:10,padding:"9px 15px",cursor:"pointer",fontWeight:700,fontSize:13}}>+ Tambah Guru</button>
+            <button onClick={()=>{setScanSeed(null);setSelGuru(null);setModal("tambah");}} style={{background:"#fff",border:"none",color:"#1e3a5f",borderRadius:10,padding:"9px 15px",cursor:"pointer",fontWeight:700,fontSize:13}}>+ Tambah Guru</button>
           </div>
         </div>
         <div style={{display:"flex",gap:9,marginTop:16,flexWrap:"wrap"}}>
@@ -700,7 +920,8 @@ export default function App(){
       </div>
     </div>
 
-    {(modal==="tambah"||modal==="edit")&&<FormSupervisi guru={modal==="edit"?guruList[selGuru]:null} indikator={indikator} onSave={handleSave} onClose={()=>{setModal(null);setSelGuru(null);}}/>}
+    {modal==="scan"&&<ScanSupervisiModal onClose={()=>setModal(null)} onApply={(parsed)=>{setScanSeed(parsed);setSelGuru(null);setModal("tambah");}}/>}
+    {(modal==="tambah"||modal==="edit")&&<FormSupervisi guru={modal==="edit"?guruList[selGuru]:null} indikator={indikator} seedData={modal==="tambah"?scanSeed:null} onSave={handleSave} onClose={()=>{setModal(null);setSelGuru(null);}}/>}
     {modal==="detail"&&selGuru!==null&&<DetailGuru guru={guruList[selGuru]} indikator={indikator} onClose={()=>{setModal(null);setSelGuru(null);}} onEdit={()=>setModal("edit")}/>}
     {modal==="catatan"&&<KelolaCatatan indikator={indikator} onSave={(ind)=>{saveInd(ind);setModal(null);setSaved(true);setTimeout(()=>setSaved(false),2000);}} onClose={()=>setModal(null)}/>}
   </div>);
