@@ -145,41 +145,60 @@ async function recognizeTextFromFile(file, onProgress) {
   const logger = (m) => {
     if (onProgress) onProgress(m.progress || 0, m.status || "Memproses gambar...");
   };
+  const image = await createPreprocessedImage(file);
+  const options = {
+    logger,
+    tessedit_pageseg_mode: 6,
+    tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/:.-(),% ",
+    preserve_interword_spaces: "1",
+  };
 
-  let worker = null;
+  const runRecognize = async (lang) => {
+    const result = await T.recognize(image, lang, options);
+    return result?.data?.text || "";
+  };
+
   try {
+    return await runRecognize("ind+eng");
+  } catch (firstError) {
     try {
-      worker = await Promise.resolve(T.createWorker({ logger }));
+      return await runRecognize("eng");
     } catch {
-      worker = await Promise.resolve(T.createWorker("eng", 1, { logger }));
-    }
-
-    if (!worker || typeof worker.recognize !== "function") {
-      throw new Error("Worker OCR tidak valid.");
-    }
-
-    let recognized = null;
-    try {
-      recognized = await worker.recognize(file);
-    } catch (firstError) {
-      // Fallback for legacy worker lifecycle.
-      if (typeof worker.load === "function") {
-        await worker.load();
-        if (typeof worker.loadLanguage === "function") await worker.loadLanguage("eng");
-        if (typeof worker.initialize === "function") await worker.initialize("eng");
-        recognized = await worker.recognize(file);
-      } else {
-        throw firstError;
-      }
-    }
-
-    const { data } = recognized || {};
-    return data?.text || "";
-  } finally {
-    if (worker && typeof worker.terminate === "function") {
-      await worker.terminate();
+      throw firstError;
     }
   }
+}
+async function createPreprocessedImage(file) {
+  const bitmap = await createImageBitmap(file);
+  const maxWidth = 1800;
+  const scale = Math.min(1, maxWidth / bitmap.width);
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) {
+    bitmap.close?.();
+    throw new Error("Canvas preprocessing gagal.");
+  }
+
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = Math.round((data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114));
+    const boosted = gray > 165 ? 255 : gray < 110 ? 0 : gray;
+    data[i] = boosted;
+    data[i + 1] = boosted;
+    data[i + 2] = boosted;
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  bitmap.close?.();
+  return canvas;
 }
 function normalizeOcrText(text) {
   return text
@@ -208,6 +227,31 @@ function cleanExtractedValue(value) {
     .replace(/\|/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+function normalizeClassValue(value) {
+  const raw = cleanExtractedValue(value).toUpperCase();
+  if (!raw) return "";
+
+  const corrected = raw
+    .replace(/\bV[IL1]{2,3}\b/g, "VIII")
+    .replace(/\bXI[IL1]{1,2}\b/g, "XII")
+    .replace(/\bX[IL1]\b/g, "XI")
+    .replace(/\bV[IL1]\b/g, "VI")
+    .replace(/\bI[IL1]\b/g, "II")
+    .replace(/\bL[IL1]\b/g, "II")
+    .replace(/\b1\b/g, "I")
+    .replace(/\b0\b/g, "O");
+
+  return corrected
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\bVIII\b/i, "VIII")
+    .replace(/\bXII\b/i, "XII")
+    .replace(/\bXI\b/i, "XI")
+    .replace(/\bX\b/i, "X")
+    .replace(/\bIX\b/i, "IX")
+    .replace(/\bVI\b/i, "VI")
+    .replace(/\bV\b/i, "V");
 }
 function splitOcrLines(text) {
   return text
@@ -326,7 +370,7 @@ function parseScanText(rawText) {
   const info = {
     nama: findFieldValueFromLines(lines, ["Nama Guru", "Nama"]),
     mapel: findFieldValueFromLines(lines, ["Mata Pelajaran", "Mapel"]),
-    kelas: findFieldValueFromLines(lines, ["Kelas / Program", "Kelas", "Program"]),
+    kelas: normalizeClassValue(findFieldValueFromLines(lines, ["Kelas / Program", "Kelas", "Program"])),
     tanggal: findFieldValueFromLines(lines, ["Tanggal Supervisi", "Tanggal"]),
     supervisor: findFieldValueFromLines(lines, ["Supervisor", "Pengawas"]),
   };
