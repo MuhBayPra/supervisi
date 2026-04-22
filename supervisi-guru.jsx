@@ -50,6 +50,74 @@ function getPred(p) {
   return        { label:"Perlu Pembinaan",      bg:"#fee2e2", text:"#7f1d1d", c:[239,68,68] };
 }
 
+function getPredRange(label) {
+  if (label === "Sangat Baik") return "91-100%";
+  if (label === "Baik") return "81-90%";
+  if (label === "Cukup") return "71-80%";
+  return "<= 70%";
+}
+
+function getSortedIndicatorsByScore(guru, indikator) {
+  const mapped = indikator.map((ind) => ({
+    id: ind.id,
+    judul: ind.judul,
+    skor: Number(guru.skor?.[ind.id] || 0),
+  }));
+  return mapped.sort((a, b) => b.skor - a.skor || a.id - b.id);
+}
+
+function buildFeedbackSummary(guru, indikator) {
+  const sorted = getSortedIndicatorsByScore(guru, indikator);
+  const strengths = sorted.filter((x) => x.skor >= 4).slice(0, 3);
+  const improve = [...sorted].reverse().filter((x) => x.skor > 0 && x.skor <= 3).slice(0, 3);
+
+  const strengthText = strengths.length
+    ? `Kekuatan utama terlihat pada: ${strengths.map((x) => x.judul).join(", ")}.`
+    : "Guru telah menunjukkan upaya baik selama proses pembelajaran dan supervisi.";
+
+  const improveText = improve.length
+    ? `Area yang perlu ditingkatkan: ${improve.map((x) => x.judul).join(", ")}.`
+    : "Belum ada area kritis; pertahankan kualitas dan konsistensi pembelajaran.";
+
+  let rtl = "Lakukan coaching terarah, pendampingan perangkat ajar, dan supervisi lanjutan secara berkala.";
+  const pred = getPred(guru.persen).label;
+  if (pred === "Sangat Baik") {
+    rtl = "Pertahankan praktik baik, bagikan praktik pembelajaran ke guru lain, dan jadikan model internal sekolah.";
+  } else if (pred === "Baik") {
+    rtl = "Perkuat refleksi siswa, variasi metode, dan diferensiasi melalui coaching internal 1 bulan ke depan.";
+  } else if (pred === "Cukup") {
+    rtl = "Diperlukan pendampingan intensif 2-4 minggu pada perencanaan, media ajar, dan strategi keterlibatan siswa.";
+  }
+
+  return { strengthText, improveText, rtl };
+}
+
+function buildRekapCatatan(guru, indikator) {
+  const pred = getPred(guru.persen).label;
+  const weakAreas = getSortedIndicatorsByScore(guru, indikator)
+    .reverse()
+    .filter((x) => x.skor > 0 && x.skor <= 3)
+    .slice(0, 2)
+    .map((x) => x.judul.toLowerCase());
+
+  if (pred === "Sangat Baik") {
+    return weakAreas.length
+      ? `Kinerja sangat baik, perlu penguatan pada ${weakAreas.join(" dan ")}.`
+      : "Kinerja sangat baik dan konsisten pada seluruh aspek supervisi.";
+  }
+  if (pred === "Baik") {
+    return weakAreas.length
+      ? `Kinerja baik, perlu peningkatan pada ${weakAreas.join(" dan ")}.`
+      : "Kinerja baik, lanjutkan perbaikan berkelanjutan pada proses pembelajaran.";
+  }
+  if (pred === "Cukup") {
+    return weakAreas.length
+      ? `Perlu pendampingan pada ${weakAreas.join(" dan ")} agar hasil supervisi meningkat.`
+      : "Perlu pendampingan terarah agar kualitas pembelajaran meningkat.";
+  }
+  return "Memerlukan pembinaan khusus, coaching rutin, dan monitoring mingguan.";
+}
+
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
@@ -69,147 +137,300 @@ async function exportGuruPDF(guru, indikator) {
   const doc = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4" });
   const W = doc.internal.pageSize.getWidth();
   const pred = getPred(guru.persen);
+  const now = new Date().toLocaleDateString("id-ID");
+  const { strengthText, improveText, rtl } = buildFeedbackSummary(guru, indikator);
 
-  doc.setFillColor(30,58,95); doc.rect(0,0,W,36,"F");
-  doc.setTextColor(255,255,255);
-  doc.setFontSize(7); doc.setFont("helvetica","normal");
-  doc.text("LAPORAN HASIL SUPERVISI GURU", W/2, 9, {align:"center"});
-  doc.setFontSize(14); doc.setFont("helvetica","bold");
-  doc.text(SEKOLAH, W/2, 17, {align:"center"});
-  doc.setFontSize(9); doc.setFont("helvetica","normal");
-  doc.text("Tahun Pelajaran 2025/2026", W/2, 25, {align:"center"});
+  doc.setTextColor(0);
+  doc.setFont("times", "bold");
+  doc.setFontSize(13);
+  doc.text("LAPORAN HASIL SUPERVISI GURU", W/2, 14, { align:"center" });
+  doc.setFontSize(11);
+  doc.text(SEKOLAH.toUpperCase(), W/2, 20, { align:"center" });
+  doc.setFont("times", "normal");
+  doc.setFontSize(9);
+  doc.text("Untuk Laporan Kepala Sekolah kepada Yayasan", W/2, 25, { align:"center" });
 
-  let y = 44;
-  doc.setTextColor(30,58,95); doc.setFontSize(10); doc.setFont("helvetica","bold");
-  doc.text("A. IDENTITAS GURU", 14, y); y += 5;
-  doc.setDrawColor(30,58,95); doc.setLineWidth(0.4); doc.line(14,y,W-14,y); y += 4;
-  const info = [["Nama Guru",guru.nama],["Mata Pelajaran",guru.mapel],["Kelas / Program",guru.kelas||"-"],["Tanggal Supervisi",guru.tanggal||"-"],["Supervisor",guru.supervisor||"-"]];
-  doc.setFontSize(9); doc.setTextColor(0);
-  info.forEach(([k,v]) => { doc.setFont("helvetica","bold"); doc.text(k,14,y); doc.setFont("helvetica","normal"); doc.text(`: ${v}`,65,y); y+=5; });
+  let y = 32;
+  doc.setFont("times", "bold");
+  doc.setFontSize(10);
+  doc.text("A. IDENTITAS GURU", 14, y);
+  y += 2;
 
-  // Kotak skor kanan atas
-  const bx=W-57, by=44, bw=43, bh=28;
-  doc.setFillColor(240,247,255); doc.setDrawColor(30,58,95); doc.setLineWidth(0.8);
-  doc.roundedRect(bx,by,bw,bh,3,3,"FD");
-  doc.setFontSize(8); doc.setTextColor(100); doc.setFont("helvetica","normal");
-  doc.text("Total Skor",bx+bw/2,by+7,{align:"center"});
-  doc.setFontSize(22); doc.setFont("helvetica","bold"); doc.setTextColor(30,58,95);
-  doc.text(`${guru.total}`,bx+bw/2,by+17,{align:"center"});
-  doc.setFontSize(8); doc.setTextColor(100); doc.setFont("helvetica","normal");
-  doc.text(`dari ${SKOR_MAX} (${guru.persen}%)`,bx+bw/2,by+24,{align:"center"});
-  doc.setFillColor(...pred.c);
-  doc.roundedRect(bx,by+30,bw,8,2,2,"F");
-  doc.setTextColor(255); doc.setFontSize(9); doc.setFont("helvetica","bold");
-  doc.text(pred.label,bx+bw/2,by+35.5,{align:"center"});
-
-  y += 5;
-  doc.setTextColor(30,58,95); doc.setFontSize(10); doc.setFont("helvetica","bold");
-  doc.text("B. ASPEK PENILAIAN", 14, y); y += 5;
-  doc.setDrawColor(30,58,95); doc.setLineWidth(0.4); doc.line(14,y,W-14,y); y += 3;
-
-  const katGroups = {};
-  indikator.forEach(ind => { if (!katGroups[ind.kat]) katGroups[ind.kat]=[]; katGroups[ind.kat].push(ind); });
-  const katFill = { A:[219,234,254], B:[220,252,231], C:[254,243,199], D:[237,233,254], E:[255,228,230] };
-  const katTextC = { A:[30,58,95], B:[6,78,59], C:[120,53,15], D:[76,29,149], E:[136,19,55] };
-
-  Object.entries(katGroups).forEach(([kat, inds]) => {
-    const rows = inds.map(ind => { const s=guru.skor[ind.id]; return [ind.id, ind.judul, s||"-", ind.catatan[s]||""]; });
-    doc.autoTable({
-      startY: y,
-      head: [[{content:`${kat}. ${KAT_LABEL[kat]}`,colSpan:4,styles:{fillColor:katFill[kat],textColor:katTextC[kat],fontStyle:"bold",fontSize:9}}],["No","Indikator","Skor","Catatan"]],
-      body: rows, margin:{left:14,right:14},
-      columnStyles: { 0:{cellWidth:8,halign:"center",fontSize:8}, 1:{cellWidth:58,fontSize:8}, 2:{cellWidth:10,halign:"center",fontStyle:"bold",fontSize:10}, 3:{cellWidth:90,fontSize:7.5} },
-      headStyles:{fillColor:[51,65,85],textColor:255,fontSize:8,fontStyle:"bold"},
-      alternateRowStyles:{fillColor:[248,250,252]},
-      didDrawCell:(data) => {
-        if (data.section==="body" && data.column.index===2) {
-          const s=parseInt(data.cell.text[0]);
-          const sc=[[],[239,68,68],[245,158,11],[59,130,246],[16,185,129]];
-          if (sc[s]) {
-            doc.setFillColor(...sc[s]);
-            doc.roundedRect(data.cell.x+1,data.cell.y+1,data.cell.width-2,data.cell.height-2,1.5,1.5,"F");
-            doc.setTextColor(255); doc.setFontSize(10); doc.setFont("helvetica","bold");
-            doc.text(String(s),data.cell.x+data.cell.width/2,data.cell.y+data.cell.height/2+1.5,{align:"center"});
-          }
-        }
-      },
-    });
-    y = doc.lastAutoTable.finalY + 4;
-  });
-
-  if (y > 240) { doc.addPage(); y = 20; }
-  y += 4;
-  doc.setTextColor(30,58,95); doc.setFontSize(10); doc.setFont("helvetica","bold");
-  doc.text("C. TANDA TANGAN", 14, y); y += 5;
-  doc.setDrawColor(30,58,95); doc.line(14,y,W-14,y); y += 10;
-  doc.setFontSize(9); doc.setFont("helvetica","normal"); doc.setTextColor(0);
-  doc.text("Guru yang Disupervisi,", 34, y, {align:"center"});
-  doc.text("Supervisor,", W-38, y, {align:"center"});
-  y += 22;
-  doc.text(`(${guru.nama})`, 34, y, {align:"center"});
-  doc.text(`(${guru.supervisor||"................................"})`, W-38, y, {align:"center"});
-
-  const pages = doc.internal.getNumberOfPages();
-  for (let i=1;i<=pages;i++) { doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(150); doc.setFont("helvetica","normal"); doc.text(`${SEKOLAH} · Dicetak: ${new Date().toLocaleDateString("id-ID")} · Hal ${i}/${pages}`, W/2, 292, {align:"center"}); }
-  doc.save(`Supervisi_${guru.nama.replace(/\s+/g,"_")}.pdf`);
-}
-
-async function exportRekapPDF(guruList) {
-  await ensureJsPDF();
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});
-  const W = doc.internal.pageSize.getWidth();
-
-  doc.setFillColor(30,58,95); doc.rect(0,0,W,32,"F");
-  doc.setTextColor(255,255,255);
-  doc.setFontSize(7); doc.setFont("helvetica","normal"); doc.text("REKAP PENILAIAN SUPERVISI GURU",W/2,9,{align:"center"});
-  doc.setFontSize(14); doc.setFont("helvetica","bold"); doc.text(SEKOLAH,W/2,17,{align:"center"});
-  doc.setFontSize(9); doc.setFont("helvetica","normal"); doc.text(`Tahun Pelajaran 2025/2026  ·  Dicetak: ${new Date().toLocaleDateString("id-ID")}`,W/2,25,{align:"center"});
-
-  const total=guruList.length;
-  const avg=total?(guruList.reduce((a,b)=>a+b.persen,0)/total).toFixed(2):0;
-  const cp={"Sangat Baik":0,"Baik":0,"Cukup":0,"Perlu Pembinaan":0};
-  guruList.forEach(g=>{cp[getPred(g.persen).label]++;});
-
-  let bx=14;
-  [{label:"Total Guru",val:total},{label:"Rata-rata",val:`${avg}%`},{label:"Sangat Baik",val:cp["Sangat Baik"]},{label:"Baik",val:cp["Baik"]},{label:"Cukup",val:cp["Cukup"]},{label:"Perlu Pembinaan",val:cp["Perlu Pembinaan"]}].forEach(s=>{
-    doc.setFillColor(240,247,255); doc.setDrawColor(191,219,254); doc.setLineWidth(0.4);
-    doc.roundedRect(bx,36,38,14,2,2,"FD");
-    doc.setFontSize(13); doc.setFont("helvetica","bold"); doc.setTextColor(30,58,95);
-    doc.text(String(s.val),bx+19,44,{align:"center"});
-    doc.setFontSize(7); doc.setFont("helvetica","normal"); doc.setTextColor(100);
-    doc.text(s.label,bx+19,48,{align:"center"});
-    bx+=42;
-  });
-
-  const rows=guruList.map((g,i)=>{const p=getPred(g.persen); return [i+1,g.nama,g.mapel,g.kelas||"-",g.tanggal||"-",g.total,`${g.persen}%`,p.label];});
   doc.autoTable({
-    startY:54, head:[["No","Nama Guru","Mata Pelajaran","Kelas","Tgl Supervisi","Skor","Persentase","Predikat"]],
-    body:rows, margin:{left:14,right:14},
-    headStyles:{fillColor:[30,58,95],textColor:255,fontStyle:"bold",fontSize:9},
-    columnStyles:{0:{cellWidth:10,halign:"center"},1:{cellWidth:55},2:{cellWidth:45},3:{cellWidth:22},4:{cellWidth:25},5:{cellWidth:15,halign:"center",fontStyle:"bold"},6:{cellWidth:22,halign:"center"},7:{cellWidth:30,halign:"center",fontStyle:"bold"}},
-    bodyStyles:{fontSize:9}, alternateRowStyles:{fillColor:[248,250,252]},
-    didDrawCell:(data)=>{
-      if(data.section==="body"&&data.column.index===7){
-        const pc={"Sangat Baik":[16,185,129],"Baik":[59,130,246],"Cukup":[245,158,11],"Perlu Pembinaan":[239,68,68]};
-        const c=pc[data.cell.text[0]];
-        if(c){doc.setFillColor(...c);doc.roundedRect(data.cell.x+1.5,data.cell.y+1.5,data.cell.width-3,data.cell.height-3,2,2,"F");doc.setTextColor(255);doc.setFontSize(8);doc.setFont("helvetica","bold");doc.text(data.cell.text[0],data.cell.x+data.cell.width/2,data.cell.y+data.cell.height/2+1.5,{align:"center"});}
-      }
+    startY: y + 1,
+    margin: { left:14, right:14 },
+    head: [["KOMPONEN", "KETERANGAN"]],
+    body: [
+      ["Nama Guru", `: ${guru.nama || "-"}`],
+      ["Mata Pelajaran", `: ${guru.mapel || "-"}`],
+      ["Kelas / Program", `: ${guru.kelas || "-"}`],
+      ["Tanggal Supervisi", `: ${guru.tanggal || "-"}`],
+      ["Supervisor", `: ${guru.supervisor || "-"}`],
+    ],
+    theme: "grid",
+    styles: { font:"times", fontSize:9.5, cellPadding:2 },
+    headStyles: { fillColor:[240,240,240], textColor:20, fontStyle:"bold", halign:"center" },
+    columnStyles: {
+      0: { cellWidth:50, fontStyle:"bold" },
+      1: { cellWidth:W - 28 - 50 },
     },
   });
 
-  let ky=doc.lastAutoTable.finalY+8;
-  doc.setFontSize(8.5); doc.setFont("helvetica","bold"); doc.setTextColor(30,58,95); doc.text("Keterangan Predikat:",14,ky); ky+=5;
-  let kx=14;
-  [{label:"Sangat Baik",range:"91–100%",c:[16,185,129]},{label:"Baik",range:"81–90%",c:[59,130,246]},{label:"Cukup",range:"71–80%",c:[245,158,11]},{label:"Perlu Pembinaan",range:"≤ 70%",c:[239,68,68]}].forEach(k=>{
-    doc.setFillColor(...k.c); doc.roundedRect(kx,ky-3.5,55,7,1.5,1.5,"F");
-    doc.setTextColor(255); doc.setFontSize(8); doc.setFont("helvetica","bold");
-    doc.text(`${k.label}: ${k.range}`,kx+27.5,ky+1,{align:"center"}); kx+=58;
+  y = doc.lastAutoTable.finalY + 3;
+  doc.setFont("times", "normal");
+  doc.setFontSize(9.5);
+  doc.text(`Total Skor: ${guru.total} dari ${SKOR_MAX}`, 14, y);
+  doc.text(`Persentase: ${guru.persen}%`, 75, y);
+  doc.text(`Predikat: ${pred.label} (${getPredRange(pred.label)})`, 122, y);
+
+  y += 7;
+  doc.setFont("times", "bold");
+  doc.setFontSize(10);
+  doc.text("B. ASPEK PENILAIAN (Skala 1-4)", 14, y);
+
+  const katGroups = {};
+  indikator.forEach(ind => { if (!katGroups[ind.kat]) katGroups[ind.kat] = []; katGroups[ind.kat].push(ind); });
+
+  const aspectRows = [];
+  Object.entries(katGroups).forEach(([kat, inds]) => {
+    aspectRows.push([{ content: `${kat}. ${KAT_LABEL[kat].toUpperCase()}`, colSpan:4, styles: { fontStyle:"bold", fillColor:[245,245,245], textColor:20 } }]);
+    inds.forEach((ind) => {
+      const s = Number(guru.skor?.[ind.id] || 0);
+      aspectRows.push([String(ind.id), ind.judul, s ? String(s) : "-", s ? (ind.catatan[s] || "-") : "-"]);
+    });
   });
 
-  const pages=doc.internal.getNumberOfPages();
-  for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFontSize(7.5);doc.setTextColor(150);doc.setFont("helvetica","normal");doc.text(`${SEKOLAH} · Hal ${i}/${pages}`,W/2,205,{align:"center"});}
-  doc.save(`Rekap_Supervisi_${SEKOLAH.replace(/\s+/g,"_")}.pdf`);
+  doc.autoTable({
+    startY: y + 1,
+    margin: { left:14, right:14 },
+    head: [["No", "Aspek / Indikator", "Skor", "Catatan"]],
+    body: aspectRows,
+    theme: "grid",
+    styles: { font:"times", fontSize:8.8, cellPadding:1.6, valign:"middle", lineColor:[120,120,120], lineWidth:0.1 },
+    headStyles: { fillColor:[240,240,240], textColor:20, fontStyle:"bold", halign:"center" },
+    columnStyles: {
+      0: { cellWidth:10, halign:"center" },
+      1: { cellWidth:58 },
+      2: { cellWidth:12, halign:"center", fontStyle:"bold" },
+      3: { cellWidth:W - 28 - 10 - 58 - 12 },
+    },
+  });
+
+  y = doc.lastAutoTable.finalY + 5;
+  if (y > 240) { doc.addPage(); y = 18; }
+
+  doc.setFont("times", "bold");
+  doc.setFontSize(10);
+  doc.text("C. CATATAN SUPERVISOR", 14, y);
+
+  doc.autoTable({
+    startY: y + 1,
+    margin: { left:14, right:14 },
+    head: [["Keterangan", "Isi"]],
+    body: [
+      ["Kekuatan Guru", strengthText],
+      ["Area Perbaikan", improveText],
+      ["Rekomendasi / RTL", rtl],
+    ],
+    theme: "grid",
+    styles: { font:"times", fontSize:9, cellPadding:2 },
+    headStyles: { fillColor:[240,240,240], textColor:20, fontStyle:"bold", halign:"center" },
+    columnStyles: {
+      0: { cellWidth:45, fontStyle:"bold" },
+      1: { cellWidth:W - 28 - 45 },
+    },
+  });
+
+  y = doc.lastAutoTable.finalY + 5;
+  if (y > 240) { doc.addPage(); y = 18; }
+
+  doc.setFont("times", "bold");
+  doc.setFontSize(10);
+  doc.text("D. TANDA TANGAN", 14, y);
+
+  doc.autoTable({
+    startY: y + 1,
+    margin: { left:14, right:14 },
+    head: [["Guru yang Disupervisi", "Supervisor"]],
+    body: [[`( ${guru.nama || "..............................."} )`, `( ${guru.supervisor || "..............................."} )`]],
+    theme: "grid",
+    styles: { font:"times", fontSize:10, cellPadding:2, halign:"center", valign:"bottom" },
+    headStyles: { fillColor:[240,240,240], textColor:20, fontStyle:"bold" },
+    bodyStyles: { minCellHeight:20 },
+    columnStyles: {
+      0: { cellWidth:(W - 28) / 2 },
+      1: { cellWidth:(W - 28) / 2 },
+    },
+  });
+
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setFont("times", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text(`${SEKOLAH} - Dicetak: ${now} - Hal ${i}/${pages}`, W/2, 292, { align:"center" });
+  }
+
+  doc.save(`Supervisi_${guru.nama.replace(/\s+/g,"_")}.pdf`);
+}
+
+  async function exportRekapPDF(guruList, indikatorRef = DEFAULT_INDIKATOR) {
+    await ensureJsPDF();
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation:"landscape", unit:"mm", format:"a4" });
+    const W = doc.internal.pageSize.getWidth();
+    const now = new Date().toLocaleDateString("id-ID");
+
+    doc.setTextColor(0);
+    doc.setFont("times", "bold");
+    doc.setFontSize(14);
+    doc.text("REKAP PENILAIAN SUPERVISI GURU", W/2, 14, { align:"center" });
+    doc.setFontSize(10.5);
+    doc.text("Untuk Laporan Kepala Sekolah kepada Yayasan", W/2, 20, { align:"center" });
+    doc.text(SEKOLAH, W/2, 26, { align:"center" });
+
+    const total = guruList.length;
+    const avg = total ? (guruList.reduce((a,b)=>a+b.persen,0) / total).toFixed(2) : "0.00";
+    const cp = { "Sangat Baik":0, "Baik":0, "Cukup":0, "Perlu Pembinaan":0 };
+    guruList.forEach((g) => { cp[getPred(g.persen).label]++; });
+
+    let y = 34;
+    doc.setFont("times", "bold");
+    doc.setFontSize(10);
+    doc.text("Ketentuan Penilaian", 14, y);
+    doc.setFont("times", "normal");
+    doc.setFontSize(9.2);
+    y += 5;
+    doc.text("- Jumlah indikator: 20", 16, y);
+    y += 4;
+    doc.text("- Skor minimal per indikator: 1", 16, y);
+    y += 4;
+    doc.text("- Skor maksimal per indikator: 4", 16, y);
+    y += 4;
+    doc.text(`- Skor maksimal keseluruhan: ${SKOR_MAX}`, 16, y);
+    y += 5;
+    doc.setFont("times", "bold");
+    doc.text("Rumus Persentase", 14, y);
+    doc.setFont("times", "normal");
+    y += 4;
+    doc.text(`Persentase = (Total Skor / ${SKOR_MAX}) x 100%`, 16, y);
+
+    y += 8;
+    doc.setFont("times", "bold");
+    doc.setFontSize(10);
+    doc.text("Rekap Umum Kepala Sekolah kepada Yayasan", 14, y);
+
+    const rows = guruList.map((g, i) => {
+      const pred = getPred(g.persen).label;
+      return [
+        i + 1,
+        g.nama,
+        g.mapel,
+        g.total,
+        SKOR_MAX,
+        `${Number(g.persen).toFixed(2)}%`,
+        pred,
+        buildRekapCatatan(g, indikatorRef),
+      ];
+    });
+
+    doc.autoTable({
+      startY: y + 1,
+      margin: { left:14, right:14 },
+      head: [["No", "Nama Guru", "Mata Pelajaran", "Total Skor", "Skor Maksimal", "Persentase", "Predikat", "Catatan Singkat Kepala Sekolah"]],
+      body: rows,
+      theme: "grid",
+      styles: { font:"times", fontSize:8.6, cellPadding:1.5, lineColor:[120,120,120], lineWidth:0.1 },
+      headStyles: { fillColor:[240,240,240], textColor:20, fontStyle:"bold", halign:"center" },
+      columnStyles: {
+        0: { cellWidth:10, halign:"center" },
+        1: { cellWidth:45 },
+        2: { cellWidth:35 },
+        3: { cellWidth:16, halign:"center" },
+        4: { cellWidth:19, halign:"center" },
+        5: { cellWidth:18, halign:"center" },
+        6: { cellWidth:26, halign:"center", fontStyle:"bold" },
+        7: { cellWidth:W - 28 - 10 - 45 - 35 - 16 - 19 - 18 - 26 },
+      },
+    });
+
+    y = doc.lastAutoTable.finalY + 5;
+    if (y > 180) { doc.addPage(); y = 16; }
+
+    doc.setFont("times", "bold");
+    doc.setFontSize(10);
+    doc.text("Kriteria Predikat", 14, y);
+    doc.autoTable({
+      startY: y + 1,
+      margin: { left:14 },
+      head: [["Persentase", "Predikat"]],
+      body: [
+        ["91-100%", "Sangat Baik"],
+        ["81-90%", "Baik"],
+        ["71-80%", "Cukup"],
+        ["<= 70%", "Perlu Pembinaan"],
+      ],
+      theme: "grid",
+      styles: { font:"times", fontSize:9, cellPadding:2 },
+      headStyles: { fillColor:[240,240,240], textColor:20, fontStyle:"bold", halign:"center" },
+      columnStyles: {
+        0: { cellWidth:35, halign:"center" },
+        1: { cellWidth:45, halign:"center" },
+      },
+    });
+
+    doc.autoTable({
+      startY: y + 1,
+      margin: { left:105 },
+      head: [["Komponen", "Hasil"]],
+      body: [
+        ["Jumlah Guru Disupervisi", `${total} Guru`],
+        ["Rata-rata Nilai Supervisi", `${avg}%`],
+        ["Predikat Mayoritas", Object.entries(cp).sort((a,b) => b[1] - a[1])[0]?.[0] || "-"],
+        ["Guru dengan Predikat Sangat Baik", `${cp["Sangat Baik"]} Guru`],
+        ["Guru dengan Predikat Baik", `${cp["Baik"]} Guru`],
+        ["Guru dengan Predikat Cukup", `${cp["Cukup"]} Guru`],
+        ["Guru yang Memerlukan Pembinaan Khusus", `${cp["Perlu Pembinaan"]} Guru`],
+      ],
+      theme: "grid",
+      styles: { font:"times", fontSize:9, cellPadding:2 },
+      headStyles: { fillColor:[240,240,240], textColor:20, fontStyle:"bold", halign:"center" },
+      columnStyles: {
+        0: { cellWidth:70 },
+        1: { cellWidth:55 },
+      },
+    });
+
+    y = doc.lastAutoTable.finalY + 6;
+    if (y > 180) { doc.addPage(); y = 16; }
+
+    doc.setFont("times", "bold");
+    doc.setFontSize(10);
+    doc.text("Kesimpulan Kepala Sekolah", 14, y);
+
+    doc.setFont("times", "normal");
+    doc.setFontSize(9.2);
+    const p1 = "Secara umum, hasil supervisi menunjukkan bahwa sebagian besar guru telah melaksanakan pembelajaran dengan baik, administrasi cukup lengkap, serta memiliki komitmen yang tinggi terhadap sekolah. Area yang masih perlu ditingkatkan meliputi diferensiasi pembelajaran, penggunaan refleksi siswa, variasi metode, dan penguatan rubrik penilaian.";
+    const p2 = "Ke depan, sekolah akan melakukan tindak lanjut berupa pelatihan internal, coaching per bidang studi, supervisi lanjutan, dan pendampingan administrasi pembelajaran agar kualitas guru terus meningkat secara berkelanjutan.";
+
+    const t1 = doc.splitTextToSize(p1, W - 28);
+    const t2 = doc.splitTextToSize(p2, W - 28);
+    y += 4.5;
+    doc.text(t1, 14, y);
+    y += (t1.length * 4.2) + 2.5;
+    doc.text(t2, 14, y);
+
+    const pages = doc.internal.getNumberOfPages();
+    for (let i=1; i<=pages; i++) {
+      doc.setPage(i);
+      doc.setFont("times", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(100);
+      doc.text(`${SEKOLAH} - Dicetak: ${now} - Hal ${i}/${pages}`, W/2, 205, { align:"center" });
+    }
+
+    doc.save(`Rekap_Supervisi_${SEKOLAH.replace(/\s+/g,"_")}.pdf`);
 }
 
 function Modal({onClose,children}){
@@ -412,7 +633,7 @@ export default function App(){
             <div style={{color:"#bfdbfe",fontSize:12,marginTop:2}}>Sistem penilaian supervisi 20 indikator · Skala 1–4</div>
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <button onClick={async()=>{if(!guruList.length)return alert("Belum ada data guru!");setExpRekap(true);try{await exportRekapPDF(guruList);}catch{alert("Gagal export PDF.");}setExpRekap(false);}} disabled={expRekap}
+            <button onClick={async()=>{if(!guruList.length)return alert("Belum ada data guru!");setExpRekap(true);try{await exportRekapPDF(guruList, indikator);}catch{alert("Gagal export PDF.");}setExpRekap(false);}} disabled={expRekap}
               style={{background:expRekap?"#4b5563":"#dc2626",border:"none",color:"#fff",borderRadius:10,padding:"9px 15px",cursor:"pointer",fontWeight:700,fontSize:13}}>
               {expRekap?"⏳ Proses...":"📄 Export Rekap PDF"}
             </button>
