@@ -401,7 +401,7 @@ function HalamanLogin({ onLoginBerhasil }) {
 // ============================================================
 //  KOMPONEN: Info Pengguna (muncul di sudut kanan atas saat login)
 // ============================================================
-function InfoPengguna({ sesi, onLogout }) {
+export function InfoPengguna({ sesi, onLogout }) {
   const [buka, setBuka] = useState(false);
   const [sisaWaktu, setSisaWaktu] = useState(formatSisaWaktu(sesi.expiredAt));
 
@@ -551,23 +551,8 @@ export default function AppDenganLogin({ AppUtama }) {
     return <HalamanLogin onLoginBerhasil={handleLoginBerhasil} />;
   }
 
-  // Sudah login → tampilkan app utama + info pengguna di sudut
-  return (
-    <div style={{ position: "relative", minHeight: "100vh" }}>
-      {/* Info pengguna di kanan atas, menumpuk di atas header app */}
-      <div style={{
-        position: "fixed",
-        top: "10px",
-        right: "14px",
-        zIndex: 100,
-      }}>
-        <InfoPengguna sesi={sesi} onLogout={handleLogout} />
-      </div>
-
-      {/* App utama */}
-      <AppUtama sesi={sesi} />
-    </div>
-  );
+  // Sudah login → tampilkan app utama
+  return <AppUtama sesi={sesi} onLogout={handleLogout} />;
 }
 
 

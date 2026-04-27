@@ -3,6 +3,7 @@ import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import ImageModule from "docxtemplater-image-module-free";
 import { saveAs } from "file-saver";
+import { InfoPengguna } from "./Login.jsx";
 
 // ============================================================
 //  FILE: supervisi-guru.jsx
@@ -2632,7 +2633,7 @@ function ModalPengaturanPDF({ pengaturan, onSimpan, onClose }) {
 // ============================================================
 // [SECTION 9] APP UTAMA
 // ============================================================
-export default function App({ sesi }) {
+export default function App({ sesi, onLogout }) {
 
   // ── State data ──
   const [daftarGuru, setDaftarGuru] = useState([]);
@@ -2791,6 +2792,9 @@ export default function App({ sesi }) {
               <button onClick={() => { setIndexGuru(null); setModal("pilih"); }} style={{ background: "#fff", border: "none", color: "#1e3a5f", borderRadius: "8px", padding: "8px 12px", cursor: "pointer", fontWeight: 700, fontSize: "12px" }}>
                 + Tambah Guru
               </button>
+
+              {/* Info Profil (Logout) */}
+              <InfoPengguna sesi={sesi} onLogout={onLogout} />
             </div>
           </div>
 
