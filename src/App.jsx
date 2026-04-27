@@ -3,6 +3,7 @@ import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import ImageModule from "docxtemplater-image-module-free";
 import { saveAs } from "file-saver";
+import JSZip from "jszip";
 import { InfoPengguna } from "./Login.jsx";
 
 // ============================================================
@@ -589,12 +590,13 @@ const base64Parser = (dataURL) => {
   return bytes.buffer;
 };
 
-const generateDocx = (templateUrl, data, outputName) => {
-  loadFile(templateUrl, async (error, content) => {
-    if (error) {
-      alert("Error memuat template. Pastikan file " + templateUrl + " ada di folder public.");
-      return;
-    }
+const generateDocx = (templateUrl, data, outputName, returnBlob = false) => {
+  return new Promise((resolve, reject) => {
+    loadFile(templateUrl, async (error, content) => {
+      if (error) {
+        alert("Error memuat template. Pastikan file " + templateUrl + " ada di folder public.");
+        return reject(error);
+      }
 
     // PENTING: Jangan pre-resolve logo ke buffer!
     // Library image-module-free mengecek typeof tagValue === 'object',
@@ -653,35 +655,41 @@ const generateDocx = (templateUrl, data, outputName) => {
       nullGetter() { return ""; }
     });
 
-    try {
-      doc.render(data);
-    } catch (e) {
-      console.error(e);
-      const errorMsg = e.properties && e.properties.errors ? JSON.stringify(e.properties.errors) : e.message;
-      alert("Kesalahan Template: " + errorMsg);
-      return;
-    }
+      try {
+        doc.render(data);
+      } catch (e) {
+        console.error(e);
+        const errorMsg = e.properties && e.properties.errors ? JSON.stringify(e.properties.errors) : e.message;
+        alert("Kesalahan Template: " + errorMsg);
+        return reject(e);
+      }
 
-    const out = doc.getZip().generate({
-      type: "blob",
-      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      const out = doc.getZip().generate({
+        type: "blob",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+
+      if (returnBlob) {
+        resolve({ blob: out, filename: outputName });
+      } else {
+        saveAs(out, outputName);
+        resolve(true);
+      }
     });
-
-    saveAs(out, outputName);
   });
 };
 
 // ── Cetak Template A ──
-async function cetakPDF_A(guru, indikator, ps) {
+async function cetakPDF_A(guru, indikator, ps, returnBlob = false) {
   const dataIndikator = indikator.map((ind, i) => ({
     id: i + 1,
     aspek: ind.katLabel,
     judul: ind.judul,
     skor: guru.skor[ind.id] || 0,
-    catatan: guru.skor[ind.id] ? ind.catatan[guru.skor[ind.id]] : ""
+    catatan: guru.catatanKhusus?.[ind.id] !== undefined ? guru.catatanKhusus[ind.id] : (guru.skor[ind.id] ? ind.catatan[guru.skor[ind.id]] : "")
   }));
 
-  generateDocx("/template_a.docx", {
+  return generateDocx("/template_a.docx", {
     ...ps.umum,
     ...ps.lembA,
     nuptk: guru.nuptk || "-",
@@ -694,22 +702,22 @@ async function cetakPDF_A(guru, indikator, ps) {
     areaPerbaikan: guru.areaPerbaikan || "-",
     rekomendasi: guru.rekomendasi || "-",
     indikator: dataIndikator
-  }, `LembarSupervisiA_${guru.nama.replace(/\s+/g, "_")}.docx`);
+  }, `LembarSupervisiA_${guru.nama.replace(/\s+/g, "_")}.docx`, returnBlob);
 }
 
 // ── Cetak Template B ──
-async function cetakPDF_B(guru, aspekB, ps) {
+async function cetakPDF_B(guru, aspekB, ps, returnBlob = false) {
   const dataAspek = aspekB.map((a, i) => ({
     id: i + 1,
     nama_aspek: a.aspek,
     indikator: a.indikator ? a.indikator.map((txt, idx) => `${idx + 1}. ${txt}`).join("\n") : "",
     skor: guru.skor[a.id] || 0,
-    catatan: guru.skor[a.id] ? a.catatan[guru.skor[a.id]] : ""
+    catatan: guru.catatanKhusus?.[a.id] !== undefined ? guru.catatanKhusus[a.id] : (guru.skor[a.id] ? a.catatan[guru.skor[a.id]] : "")
   }));
 
   const pred = getPrediakatGuru(guru).label;
 
-  generateDocx("/template_b.docx", {
+  return generateDocx("/template_b.docx", {
     ...ps.umum,
     ...ps.instrB,
     nuptk: guru.nuptk || "-",
@@ -729,7 +737,7 @@ async function cetakPDF_B(guru, aspekB, ps) {
     kesimpulan_sudahB: (guru.checkSudahB ? "☑ " : "[] ") + "Guru sudah memenuhi standar supervisi",
     kesimpulan_perluB: (guru.checkPerluB ? "☑ " : "[] ") + "Guru perlu pembinaan pada aspek",
     aspek: dataAspek.map(a => ({ ...a, skor_maks_aspek: 4 }))
-  }, `InstrumenSupervisiGuru_${guru.nama.replace(/\s+/g, "_")}.docx`);
+  }, `InstrumenSupervisiGuru_${guru.nama.replace(/\s+/g, "_")}.docx`, returnBlob);
 }
 
 // ── Cetak Rekap Yayasan Template A ──
@@ -1118,8 +1126,9 @@ function TombolSkor({ nilai, aktif, onClick }) {
 
 
 // ── Komponen: Kartu Indikator (dipakai di Form A) ──
-function KartuIndikator({ indikator, skorSaat, onSkorPilih }) {
+function KartuIndikator({ indikator, skorSaat, onSkorPilih, catatanManual, onCatatanUbah }) {
   const s = skorSaat;
+  const teksCatatan = catatanManual !== undefined ? catatanManual : (s > 0 ? indikator.catatan[s] : "");
   return (
     <div style={{
       border: `1.5px solid ${s > 0 ? "#bfdbfe" : "#e2e8f0"}`,
@@ -1145,19 +1154,30 @@ function KartuIndikator({ indikator, skorSaat, onSkorPilih }) {
           ))}
         </div>
       </div>
-      {/* Catatan otomatis (muncul saat skor dipilih) */}
+      {/* Catatan otomatis / manual (muncul saat skor dipilih) */}
       {s > 0 && (
-        <div style={{
-          marginTop: "7px",
-          padding: "6px 10px",
-          borderRadius: "7px",
-          background: "#dbeafe",
-          borderLeft: "3px solid #2563eb",
-          fontSize: "11.5px",
-          color: "#1e3a8a",
-          lineHeight: 1.5,
-        }}>
-          💬 {indikator.catatan[s]}
+        <div style={{ marginTop: "7px" }}>
+          <textarea
+            value={teksCatatan}
+            onChange={(e) => onCatatanUbah(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "8px 10px",
+              borderRadius: "7px",
+              background: "#dbeafe",
+              border: "1px solid #bfdbfe",
+              borderLeft: "3px solid #2563eb",
+              fontSize: "11.5px",
+              color: "#1e3a8a",
+              lineHeight: 1.5,
+              resize: "vertical",
+              minHeight: "45px",
+              fontFamily: "inherit",
+              outline: "none",
+              boxSizing: "border-box"
+            }}
+            placeholder="Ketik catatan khusus untuk skor ini..."
+          />
         </div>
       )}
     </div>
@@ -1166,8 +1186,9 @@ function KartuIndikator({ indikator, skorSaat, onSkorPilih }) {
 
 
 // ── Komponen: Kartu Aspek (dipakai di Form B) ──
-function KartuAspek({ aspek, skorSaat, onSkorPilih }) {
+function KartuAspek({ aspek, skorSaat, onSkorPilih, catatanManual, onCatatanUbah }) {
   const s = skorSaat;
+  const teksCatatan = catatanManual !== undefined ? catatanManual : (s > 0 ? aspek.catatan[s] : "");
   return (
     <div style={{
       border: `1.5px solid ${s > 0 ? "#bbf7d0" : "#e2e8f0"}`,
@@ -1203,19 +1224,30 @@ function KartuAspek({ aspek, skorSaat, onSkorPilih }) {
           ))}
         </div>
       </div>
-      {/* Catatan otomatis */}
+      {/* Catatan otomatis / manual */}
       {s > 0 && (
-        <div style={{
-          marginTop: "8px",
-          padding: "6px 10px",
-          borderRadius: "7px",
-          background: "#dcfce7",
-          borderLeft: "3px solid #16a34a",
-          fontSize: "11.5px",
-          color: "#166534",
-          lineHeight: 1.5,
-        }}>
-          💬 {aspek.catatan[s]}
+        <div style={{ marginTop: "8px" }}>
+          <textarea
+            value={teksCatatan}
+            onChange={(e) => onCatatanUbah(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "8px 10px",
+              borderRadius: "7px",
+              background: "#dcfce7",
+              border: "1px solid #bbf7d0",
+              borderLeft: "3px solid #16a34a",
+              fontSize: "11.5px",
+              color: "#166534",
+              lineHeight: 1.5,
+              resize: "vertical",
+              minHeight: "45px",
+              fontFamily: "inherit",
+              outline: "none",
+              boxSizing: "border-box"
+            }}
+            placeholder="Ketik catatan khusus untuk aspek ini..."
+          />
         </div>
       )}
     </div>
@@ -1353,9 +1385,16 @@ function ModalPilihTemplate({ onPilih, onClose }) {
 function FormA({ guru, indikator, onSimpan, onClose, dataPredikat }) {
   // Inisialisasi skor (dari data guru jika edit, atau 0 jika baru)
   const initSkor = {};
-  indikator.forEach(ind => { initSkor[ind.id] = guru?.skor?.[ind.id] || 0; });
+  const initCatatan = {};
+  indikator.forEach(ind => { 
+    initSkor[ind.id] = guru?.skor?.[ind.id] || 0; 
+    if (guru?.catatanKhusus?.[ind.id] !== undefined) {
+      initCatatan[ind.id] = guru.catatanKhusus[ind.id];
+    }
+  });
 
   const [skor, setSkor] = useState(initSkor);
+  const [catatanKhusus, setCatatanKhusus] = useState(initCatatan);
   const [info, setInfo] = useState({
     nuptk: guru?.nuptk || "",
     nama: guru?.nama || "",
@@ -1392,7 +1431,7 @@ function FormA({ guru, indikator, onSimpan, onClose, dataPredikat }) {
   const handleSimpan = () => {
     if (!info.nama.trim()) return alert("Nama guru wajib diisi!");
     if (!selesai) return alert("Harap isi semua 20 indikator terlebih dahulu!");
-    onSimpan({ ...info, skor, total, persen: parseFloat(persen), template: "A" });
+    onSimpan({ ...info, skor, catatanKhusus, total, persen: parseFloat(persen), template: "A" });
   };
 
   return (
@@ -1442,7 +1481,12 @@ function FormA({ guru, indikator, onSimpan, onClose, dataPredikat }) {
                   key={ind.id}
                   indikator={ind}
                   skorSaat={skor[ind.id]}
-                  onSkorPilih={n => setSkor({ ...skor, [ind.id]: n })}
+                  onSkorPilih={n => {
+                    setSkor({ ...skor, [ind.id]: n });
+                    setCatatanKhusus({ ...catatanKhusus, [ind.id]: ind.catatan[n] });
+                  }}
+                  catatanManual={catatanKhusus[ind.id]}
+                  onCatatanUbah={teks => setCatatanKhusus({ ...catatanKhusus, [ind.id]: teks })}
                 />
               ))}
             </div>
@@ -1480,9 +1524,16 @@ function FormA({ guru, indikator, onSimpan, onClose, dataPredikat }) {
 // ── Modal: Form Template B ──
 function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
   const initSkor = {};
-  aspekB.forEach(a => { initSkor[a.id] = guru?.skor?.[a.id] || 0; });
+  const initCatatan = {};
+  aspekB.forEach(a => { 
+    initSkor[a.id] = guru?.skor?.[a.id] || 0; 
+    if (guru?.catatanKhusus?.[a.id] !== undefined) {
+      initCatatan[a.id] = guru.catatanKhusus[a.id];
+    }
+  });
 
   const [skor, setSkor] = useState(initSkor);
+  const [catatanKhusus, setCatatanKhusus] = useState(initCatatan);
   const [info, setInfo] = useState({
     nuptk: guru?.nuptk || "",
     nama: guru?.nama || "",
@@ -1518,7 +1569,7 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
   const handleSimpan = () => {
     if (!info.nama.trim()) return alert("Nama guru wajib diisi!");
     if (!selesai) return alert("Harap isi semua 5 aspek terlebih dahulu!");
-    onSimpan({ ...info, skor, total, persen: parseFloat(((total / MAKS_B) * 100).toFixed(2)), template: "B" });
+    onSimpan({ ...info, skor, catatanKhusus, total, persen: parseFloat(((total / MAKS_B) * 100).toFixed(2)), template: "B" });
   };
 
   return (
@@ -1550,7 +1601,17 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
             1 = Kurang &nbsp;·&nbsp; 2 = Cukup &nbsp;·&nbsp; 3 = Baik &nbsp;·&nbsp; 4 = Sangat Baik
           </div>
           {aspekB.map(a => (
-            <KartuAspek key={a.id} aspek={a} skorSaat={skor[a.id]} onSkorPilih={n => setSkor({ ...skor, [a.id]: n })} />
+            <KartuAspek
+              key={a.id}
+              aspek={a}
+              skorSaat={skor[a.id]}
+              onSkorPilih={n => {
+                setSkor({ ...skor, [a.id]: n });
+                setCatatanKhusus({ ...catatanKhusus, [a.id]: a.catatan[n] });
+              }}
+              catatanManual={catatanKhusus[a.id]}
+              onCatatanUbah={teks => setCatatanKhusus({ ...catatanKhusus, [a.id]: teks })}
+            />
           ))}
         </div>
 
@@ -2652,16 +2713,42 @@ export default function App({ sesi, onLogout }) {
   const [notifSimpan, setNotifSimpan] = useState(false);
   const [halaman, setHalaman] = useState(1);
 
-  // ── Load data dari storage saat pertama kali ──
+  // ── Load data dari storage saat pertama kali & Polling Real-Time ──
   useEffect(() => {
-    (async () => {
-      try { const g = await window.storage.get("guru-list"); if (g) setDaftarGuru(JSON.parse(g.value)); } catch { }
-      try { const a = await window.storage.get("indikator-a"); if (a) setIndikatorA(JSON.parse(a.value)); } catch { }
-      try { const b = await window.storage.get("aspek-b"); if (b) setAspekB(JSON.parse(b.value)); } catch { }
-      try { const p = await window.storage.get("predikat-cat"); if (p) setPredikat(JSON.parse(p.value)); } catch { }
-      try { const ps = await window.storage.get("pengaturan-pdf"); if (ps) setPengaturanPDF(JSON.parse(ps.value)); } catch { }
-      setLoading(false);
-    })();
+    let dipasang = true;
+
+    const muatData = async () => {
+      try { const g = await window.storage.get("guru-list"); if (g && dipasang) setDaftarGuru(JSON.parse(g.value)); } catch { }
+      try { const a = await window.storage.get("indikator-a"); if (a && dipasang) setIndikatorA(JSON.parse(a.value)); } catch { }
+      try { const b = await window.storage.get("aspek-b"); if (b && dipasang) setAspekB(JSON.parse(b.value)); } catch { }
+      try { const p = await window.storage.get("predikat-cat"); if (p && dipasang) setPredikat(JSON.parse(p.value)); } catch { }
+      try { const ps = await window.storage.get("pengaturan-pdf"); if (ps && dipasang) setPengaturanPDF(JSON.parse(ps.value)); } catch { }
+      if (dipasang) setLoading(false);
+    };
+
+    muatData();
+
+    // Polling Otomatis: Ambil data guru terbaru setiap 2 detik (Pseudo Real-Time)
+    const interval = setInterval(async () => {
+      try {
+        const g = await window.storage.get("guru-list");
+        if (g && dipasang) {
+          const listBaru = JSON.parse(g.value);
+          setDaftarGuru(prev => {
+            // Hindari re-render jika data masih sama persis
+            if (JSON.stringify(prev) !== JSON.stringify(listBaru)) {
+              return listBaru;
+            }
+            return prev;
+          });
+        }
+      } catch (e) { }
+    }, 2000);
+
+    return () => {
+      dipasang = false;
+      clearInterval(interval);
+    };
   }, []);
 
   // ── Fungsi simpan ke storage ──
@@ -2678,21 +2765,99 @@ export default function App({ sesi, onLogout }) {
   };
 
   // ── Simpan data guru (tambah atau edit) ──
-  const handleSimpanGuru = (data) => {
+  const handleSimpanGuru = async (data) => {
+    // 1. Ambil data paling baru dari server untuk menghindari tertimpa
+    let listTerbaru = daftarGuru;
+    try {
+      const res = await window.storage.get("guru-list");
+      if (res && res.value) {
+        listTerbaru = JSON.parse(res.value);
+      }
+    } catch (e) {
+      console.warn("Gagal mengambil data terbaru, menggunakan data lokal.");
+    }
+
     const sedangEdit = (modal === "formA" || modal === "formB") && indexGuru !== null;
-    const listBaru = sedangEdit
-      ? daftarGuru.map((g, i) => i === indexGuru ? data : g)
-      : [...daftarGuru, data];
-    simpanGuru(listBaru);
+    
+    // Pastikan data punya ID unik (berguna untuk multi-user)
+    if (!data.id) {
+      data.id = Date.now().toString() + Math.random().toString(36).substring(2, 7);
+    }
+
+    if (sedangEdit) {
+      const guruAsliLokal = daftarGuru[indexGuru];
+      // Cari posisi asli di server berdasarkan ID, atau fallback ke Nama+Tanggal
+      let idxDiServer = listTerbaru.findIndex(g => g.id && g.id === guruAsliLokal.id);
+      
+      if (idxDiServer === -1) {
+        idxDiServer = listTerbaru.findIndex(g => g.nama === guruAsliLokal.nama && g.tanggal === guruAsliLokal.tanggal);
+      }
+
+      if (idxDiServer !== -1) {
+        // Pertahankan ID lama jika ada
+        listTerbaru[idxDiServer] = { ...data, id: guruAsliLokal.id || data.id };
+      } else {
+        listTerbaru.push(data);
+      }
+    } else {
+      listTerbaru.push(data);
+    }
+
+    await simpanGuru(listTerbaru);
     tampilNotif();
     setModal(null);
     setIndexGuru(null);
   };
 
   // ── Hapus guru ──
-  const hapusGuru = (idx) => {
+  const hapusGuru = async (idx) => {
     if (!confirm("Hapus data guru ini?")) return;
-    simpanGuru(daftarGuru.filter((_, i) => i !== idx));
+    
+    const guruDihapus = daftarGuru[idx];
+    
+    // Ambil data terbaru dari server
+    let listTerbaru = daftarGuru;
+    try {
+      const res = await window.storage.get("guru-list");
+      if (res && res.value) listTerbaru = JSON.parse(res.value);
+    } catch (e) {}
+
+    // Hapus data yang tepat berdasarkan ID (atau nama+tanggal untuk data lama)
+    const listBaru = listTerbaru.filter(g => {
+      if (g.id && guruDihapus.id) return g.id !== guruDihapus.id;
+      return !(g.nama === guruDihapus.nama && g.tanggal === guruDihapus.tanggal);
+    });
+
+    await simpanGuru(listBaru);
+  };
+
+  // ── Unduh Semua File sebagai ZIP ──
+  const unduhSemuaZip = async () => {
+    if (guruTerfilter.length === 0) return alert("Tidak ada data guru untuk diunduh!");
+    
+    setLoading(true);
+    try {
+      const zip = new JSZip();
+      const folderA = zip.folder("Template A");
+      const folderB = zip.folder("Template B");
+
+      for (const guru of guruTerfilter) {
+        if (guru.template === "A") {
+          const res = await cetakPDF_A(guru, indikatorA, pengaturanPDF, true);
+          if (res && res.blob) folderA.file(res.filename, res.blob);
+        } else if (guru.template === "B") {
+          const res = await cetakPDF_B(guru, aspekB, pengaturanPDF, true);
+          if (res && res.blob) folderB.file(res.filename, res.blob);
+        }
+      }
+      
+      const content = await zip.generateAsync({ type: "blob" });
+      saveAs(content, "Rekap_Semua_Supervisi.zip");
+    } catch (e) {
+      alert("Terjadi kesalahan saat membuat ZIP: " + e.message);
+      console.error(e);
+    }
+    setLoading(false);
   };
 
   // ── Buka form edit guru ──
@@ -2702,7 +2867,7 @@ export default function App({ sesi, onLogout }) {
   };
 
   // ── Filter data guru ──
-  const guruTerfilter = daftarGuru.filter(g => {
+  const guruTerfilter = [...daftarGuru].reverse().filter(g => {
     const cocokTeks = g.nama.toLowerCase().includes(cariTeks.toLowerCase())
       || g.mapel.toLowerCase().includes(cariTeks.toLowerCase())
       || (g.nuptk && g.nuptk.toLowerCase().includes(cariTeks.toLowerCase()));
@@ -2768,6 +2933,10 @@ export default function App({ sesi, onLogout }) {
 
             {/* Tombol-tombol aksi di kanan */}
             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              {/* Unduh Semua ZIP */}
+              <button onClick={unduhSemuaZip} style={{ background: "#059669", border: "none", color: "#fff", borderRadius: "8px", padding: "8px 12px", cursor: "pointer", fontWeight: 700, fontSize: "12px" }}>
+                📦 Download ZIP
+              </button>
               {/* PDF Rekap */}
               <button onClick={() => setModal("rekapYayasan")} style={{ background: "#dc2626", border: "none", color: "#fff", borderRadius: "8px", padding: "8px 12px", cursor: "pointer", fontWeight: 700, fontSize: "12px" }}>
                 📄 Rekap
