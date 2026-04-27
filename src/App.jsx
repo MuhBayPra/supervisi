@@ -2632,7 +2632,7 @@ function ModalPengaturanPDF({ pengaturan, onSimpan, onClose }) {
 // ============================================================
 // [SECTION 9] APP UTAMA
 // ============================================================
-export default function App() {
+export default function App({ sesi }) {
 
   // ── State data ──
   const [daftarGuru, setDaftarGuru] = useState([]);
