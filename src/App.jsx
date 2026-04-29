@@ -33,7 +33,7 @@ const NAMA_SEKOLAH_TTD = "SMKS Bhakti Insani Bogor";
 
 // ── Skor maksimal masing-masing template ──
 const MAKS_A = 80;
-const MAKS_B = 20;
+const MAKS_B = 60; // Max default B changed to 60 as per new rules
 
 // ── Warna tombol skor 1-4 ──
 const WARNA_SKOR = {
@@ -161,7 +161,7 @@ const DEFAULT_PENGATURAN_PDF = {
     subjudul: "Untuk Laporan Kepala Sekolah kepada Yayasan",
     judulKetentuan: "Ketentuan Penilaian (Template B)",
     judulRumus: "Rumus Persentase",
-    teksRumus: "Persentase = (Total Skor / 20) × 100%",
+    teksRumus: "Persentase = (Total Skor / 60) × 100%",
     judulKriteria: "Kriteria Predikat",
     judulRekap: "Rekap Umum Kepala Sekolah kepada Yayasan",
     judulKesimpulan: "Kesimpulan Kepala Sekolah",
@@ -532,12 +532,12 @@ function getPrediakatA(persen) {
   return { label: "Kurang", bg: "#fee2e2", text: "#7f1d1d" };
 }
 
-// ── Menghitung predikat Template B (berdasarkan total skor) ──
+// ── Menghitung predikat Template B (berdasarkan total skor, maks 60) ──
 function getPrediakatB(total) {
-  if (total >= 17) return { label: "Sangat Baik", bg: "#d1fae5", text: "#065f46" };
-  if (total >= 13) return { label: "Baik", bg: "#dbeafe", text: "#1e3a8a" };
-  if (total >= 9) return { label: "Cukup", bg: "#fef3c7", text: "#78350f" };
-  return { label: "Kurang", bg: "#fee2e2", text: "#7f1d1d" };
+  if (total >= 49) return { label: "Sangat Baik", bg: "#d1fae5", text: "#065f46" }; // 81%
+  if (total >= 37) return { label: "Baik", bg: "#dbeafe", text: "#1e3a8a" }; // 61%
+  if (total >= 25) return { label: "Cukup", bg: "#fef3c7", text: "#78350f" }; // 41%
+  return { label: "Kurang", bg: "#fee2e2", text: "#7f1d1d" }; // ≤40%
 }
 
 // ── Mendapatkan predikat dari data guru (A atau B) ──
@@ -711,11 +711,24 @@ async function cetakPDF_B(guru, aspekB, ps, returnBlob = false) {
     id: i + 1,
     nama_aspek: a.aspek,
     indikator: a.indikator ? a.indikator.map((txt, idx) => `${idx + 1}. ${txt}`).join("\n") : "",
-    skor: guru.skor[a.id] || 0,
+    skor: (function() {
+      let sum = 0;
+      if (a.indikator) {
+        a.indikator.forEach((_, idx) => {
+          let val = guru.skor[`${a.id}_${idx}`];
+          if (val === undefined || val === "") val = guru.skor[a.id] || 0;
+          let num = parseFloat(String(val).replace(",", "."));
+          if (!isNaN(num)) sum += num;
+        });
+      }
+      return Math.round(sum * 10) / 10;
+    })(),
+    skor_maks_aspek: a.indikator ? a.indikator.length * 4 : 4, // Jumlah indikator × 4
     catatan: guru.catatanKhusus?.[a.id] !== undefined ? guru.catatanKhusus[a.id] : (guru.skor[a.id] ? a.catatan[guru.skor[a.id]] : "")
   }));
 
   const pred = getPrediakatGuru(guru).label;
+  const persen = parseFloat(((guru.total / 60) * 100).toFixed(2));
 
   return generateDocx("/template_b.docx", {
     ...ps.umum,
@@ -727,8 +740,8 @@ async function cetakPDF_B(guru, aspekB, ps, returnBlob = false) {
     tanggal: guru.tanggal || "-",
     supervisor: guru.supervisor || "-",
     total: guru.total || 0,
-    skor_maks_total: 20,
-    skor_maks_aspek: 4,
+    skor_maks_total: 60,
+    persen: persen,
     predikat: pred,
     catatanB: guru.catatanB || "-",
     catatan_sudahB: guru.catatanSudahB || "",
@@ -736,7 +749,7 @@ async function cetakPDF_B(guru, aspekB, ps, returnBlob = false) {
     // Menggunakan simbol centang standar yang lebih aman
     kesimpulan_sudahB: (guru.checkSudahB ? "☑ " : "[] ") + "Guru sudah memenuhi standar supervisi",
     kesimpulan_perluB: (guru.checkPerluB ? "☑ " : "[] ") + "Guru perlu pembinaan pada aspek",
-    aspek: dataAspek.map(a => ({ ...a, skor_maks_aspek: 4 }))
+    aspek: dataAspek // skor_maks_aspek sudah dihitung di dataAspek
   }, `InstrumenSupervisiGuru_${guru.nama.replace(/\s+/g, "_")}.docx`, returnBlob);
 }
 
@@ -793,8 +806,9 @@ async function cetakRekapB(guruListB, catatanPerGuru, kesimpulan, ps) {
     nama: g.nama,
     mapel: g.mapel,
     total: g.total,
-    persen: ((g.total / 20) * 100).toFixed(2),
-    predikat: g.total >= 17 ? "Sangat Baik" : g.total >= 13 ? "Baik" : g.total >= 9 ? "Cukup" : "Kurang",
+    skor_maksimal: 60,
+    persen: ((g.total / 60) * 100).toFixed(2).replace(/\.00$/, ''),
+    predikat: getPrediakatB(g.total).label, // pakai fungsi helper yg up to date
     catatan_ks: catatanPerGuru[i] || "-"
   }));
 
@@ -1186,47 +1200,89 @@ function KartuIndikator({ indikator, skorSaat, onSkorPilih, catatanManual, onCat
 
 
 // ── Komponen: Kartu Aspek (dipakai di Form B) ──
-function KartuAspek({ aspek, skorSaat, onSkorPilih, catatanManual, onCatatanUbah }) {
-  const s = skorSaat;
-  const teksCatatan = catatanManual !== undefined ? catatanManual : (s > 0 ? aspek.catatan[s] : "");
+function KartuAspek({ aspek, skorSaat, onSkorPilih, catatanManual, onCatatanUbah, onSetSemua }) {
+  // skorSaat here is an object mapping indicator index to its string value
+  // let's calculate if any indicator is filled
+  const anyFilled = Object.values(skorSaat || {}).some(v => v !== "" && v !== undefined);
+  const teksCatatan = catatanManual !== undefined ? catatanManual : "";
+
   return (
     <div style={{
-      border: `1.5px solid ${s > 0 ? "#bbf7d0" : "#e2e8f0"}`,
+      border: `1.5px solid ${anyFilled ? "#bbf7d0" : "#e2e8f0"}`,
       borderRadius: "11px",
       padding: "12px 14px",
-      background: s > 0 ? "#f0fdf4" : "#fafafa",
+      background: anyFilled ? "#f0fdf4" : "#fafafa",
       marginBottom: "7px",
       transition: "all 0.2s",
     }}>
-      {/* Baris atas: nama aspek + tombol skor */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "5px" }}>
-            <span style={{ background: "#16a34a", color: "#fff", fontWeight: 700, fontSize: "11px", padding: "2px 8px", borderRadius: "5px" }}>
-              {aspek.id}
-            </span>
-            <span style={{ fontSize: "13px", fontWeight: 700, color: "#1e293b" }}>
-              {aspek.aspek}
-            </span>
-          </div>
-          {/* Badge indikator */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-            {aspek.indikator.map((ind, i) => (
-              <span key={i} style={{ background: "#dcfce7", color: "#166534", fontSize: "11px", padding: "2px 7px", borderRadius: "4px" }}>
-                • {ind}
-              </span>
+      <div style={{ marginBottom: "10px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ background: "#16a34a", color: "#fff", fontWeight: 700, fontSize: "11px", padding: "2px 8px", borderRadius: "5px" }}>
+            {aspek.id}
+          </span>
+          <span style={{ fontSize: "13px", fontWeight: 700, color: "#1e293b" }}>
+            {aspek.aspek}
+          </span>
+        </div>
+
+        {/* Set Semua Tombol per Aspek */}
+        {onSetSemua && (
+          <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+            <span style={{ fontSize: "10.5px", fontWeight: 600, color: "#64748b", marginRight: "2px" }}>Set semua:</span>
+            {[1, 2, 3, 4].map(n => (
+              <button
+                key={n}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onSetSemua(n);
+                }}
+                style={{
+                  background: "#e2e8f0", border: "none", borderRadius: "5px", width: "22px", height: "22px",
+                  fontSize: "11px", fontWeight: "bold", color: "#0f172a", cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center"
+                }}
+              >
+                {n}
+              </button>
             ))}
           </div>
-        </div>
-        <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
-          {[1, 2, 3, 4].map(n => (
-            <TombolSkor key={n} nilai={n} aktif={s === n} onClick={() => onSkorPilih(n)} />
-          ))}
-        </div>
+        )}
       </div>
-      {/* Catatan otomatis / manual */}
-      {s > 0 && (
-        <div style={{ marginTop: "8px" }}>
+      
+      {/* Setiap Indikator & Input Skor */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+        {aspek.indikator.map((ind, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", background: "#fff", padding: "6px 10px", border: "1px solid #cbd5e1", borderRadius: "6px" }}>
+            <span style={{ fontSize: "12px", color: "#334155" }}>• {ind}</span>
+            <input 
+              type="text"
+              value={skorSaat[i] !== undefined ? skorSaat[i] : ""}
+              onChange={(e) => {
+                let val = e.target.value;
+                // allow numbers and comma/dot
+                if (/^[0-9]*[.,]?[0-9]*$/.test(val)) {
+                  onSkorPilih(i, val);
+                }
+              }}
+              placeholder="0.0"
+              style={{
+                width: "48px",
+                padding: "4px",
+                border: "1.5px solid #94a3b8",
+                borderRadius: "5px",
+                textAlign: "center",
+                fontSize: "13px",
+                fontWeight: "bold",
+                color: "#0f172a"
+              }}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Catatan manual */}
+      {anyFilled && (
+        <div style={{ marginTop: "12px" }}>
           <textarea
             value={teksCatatan}
             onChange={(e) => onCatatanUbah(e.target.value)}
@@ -1333,8 +1389,8 @@ function ModalPilihTemplate({ onPilih, onClose }) {
     {
       tmpl: "B",
       judul: "Template B",
-      sub: "5 Aspek · Maks 20",
-      desk: "5 aspek utama sesuai format Instrumen Supervisi Guru. Catatan & kesimpulan otomatis dari predikat. Cocok untuk monitoring rutin.",
+      sub: "15 Indikator · Maks 60",
+      desk: "15 indikator utama sesuai format Instrumen Supervisi Guru. Catatan & kesimpulan otomatis dari predikat. Cocok untuk monitoring rutin.",
       tag: ["Perencanaan", "Pelaksanaan", "Pengelolaan Kelas", "Penilaian & TL", "Profesionalisme"],
       bdWarna: "#bbf7d0", bdHover: "#16a34a", tagBg: "#dcfce7", tagTeks: "#166534", btnBg: "#16a34a", bgKartu: "#f0fdf4",
     },
@@ -1526,7 +1582,14 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
   const initSkor = {};
   const initCatatan = {};
   aspekB.forEach(a => { 
-    initSkor[a.id] = guru?.skor?.[a.id] || 0; 
+    a.indikator.forEach((ind, i) => {
+      let oldVal = guru?.skor?.[`${a.id}_${i}`];
+      if (oldVal === undefined) {
+         oldVal = guru?.skor?.[a.id] || ""; // fallback from old data struct
+      }
+      initSkor[`${a.id}_${i}`] = oldVal !== "" ? String(oldVal).replace(".", ",") : "";
+    });
+
     if (guru?.catatanKhusus?.[a.id] !== undefined) {
       initCatatan[a.id] = guru.catatanKhusus[a.id];
     }
@@ -1549,9 +1612,16 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
     catatanSingkat: guru?.catatanSingkat || "",
   });
 
-  const total = Object.values(skor).reduce((a, b) => a + (b || 0), 0);
+  const totalCalc = Object.values(skor).reduce((a, b) => {
+    let f = parseFloat(String(b || "0").replace(",", "."));
+    return a + (isNaN(f) ? 0 : f);
+  }, 0);
+  const total = Math.round(totalCalc * 10) / 10;
   const pred = getPrediakatB(total);
-  const selesai = aspekB.every(a => skor[a.id] > 0);
+  const selesai = aspekB.every(a => a.indikator.every((ind, i) => {
+    let strVal = String(skor[`${a.id}_${i}`] || "");
+    return strVal.trim() !== "";
+  }));
 
   const isiOtomatis = () => {
     const pc = dataPredikat[pred.label];
@@ -1574,7 +1644,7 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
 
   return (
     <Modal onClose={onClose}>
-      <HeaderModal badge="Template B" subjudul="5 Aspek · Maks 20" judul="Instrumen Supervisi Guru" onClose={onClose} warna="hijau" />
+      <HeaderModal badge="Template B" subjudul="15 Indikator · Maks 60" judul="Instrumen Supervisi Guru" onClose={onClose} warna="hijau" />
       <div style={{ padding: "16px 22px", display: "flex", flexDirection: "column", gap: "14px", maxHeight: "78vh", overflowY: "auto" }}>
 
         {/* A. Identitas */}
@@ -1598,21 +1668,36 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
             B. Aspek Supervisi (Skala 1-4)
           </div>
           <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "9px" }}>
-            1 = Kurang &nbsp;·&nbsp; 2 = Cukup &nbsp;·&nbsp; 3 = Baik &nbsp;·&nbsp; 4 = Sangat Baik
+            Poin dapat berupa desimal (contoh: 2,5). &nbsp;Maks total: 60.
           </div>
-          {aspekB.map(a => (
-            <KartuAspek
-              key={a.id}
-              aspek={a}
-              skorSaat={skor[a.id]}
-              onSkorPilih={n => {
-                setSkor({ ...skor, [a.id]: n });
-                setCatatanKhusus({ ...catatanKhusus, [a.id]: a.catatan[n] });
-              }}
-              catatanManual={catatanKhusus[a.id]}
-              onCatatanUbah={teks => setCatatanKhusus({ ...catatanKhusus, [a.id]: teks })}
-            />
-          ))}
+
+          {aspekB.map(a => {
+            const skorAspek = {};
+            a.indikator.forEach((ind, i) => {
+              skorAspek[i] = skor[`${a.id}_${i}`];
+            });
+
+            return (
+              <KartuAspek
+                key={a.id}
+                aspek={a}
+                skorSaat={skorAspek}
+                onSkorPilih={(indexIndikator, val) => {
+                  setSkor({ ...skor, [`${a.id}_${indexIndikator}`]: val });
+                }}
+                onSetSemua={(val) => {
+                  const newSkor = { ...skor };
+                  a.indikator.forEach((ind, i) => {
+                    newSkor[`${a.id}_${i}`] = String(val);
+                  });
+                  setSkor(newSkor);
+                  setCatatanKhusus({ ...catatanKhusus, [a.id]: a.catatan[val] });
+                }}
+                catatanManual={catatanKhusus[a.id]}
+                onCatatanUbah={teks => setCatatanKhusus({ ...catatanKhusus, [a.id]: teks })}
+              />
+            );
+          })}
         </div>
 
         {/* C. Rekap Nilai */}
@@ -1626,21 +1711,31 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
               </tr>
             </thead>
             <tbody>
-              {aspekB.map(a => (
-                <tr key={a.id} style={{ borderTop: "1px solid #f1f5f9" }}>
-                  <td style={{ padding: "6px 9px", color: "#1e293b" }}>{a.aspek}</td>
-                  <td style={{ padding: "6px 9px", textAlign: "center", color: "#64748b" }}>4</td>
-                  <td style={{ padding: "6px 9px", textAlign: "center" }}>
-                    {skor[a.id] > 0
-                      ? <span style={{ background: WARNA_SKOR[skor[a.id]], color: "#fff", borderRadius: "5px", padding: "2px 9px", fontWeight: 700 }}>{skor[a.id]}</span>
-                      : <span style={{ color: "#94a3b8" }}>—</span>
-                    }
-                  </td>
-                </tr>
-              ))}
+              {aspekB.map(a => {
+                const maksAspek = a.indikator.length * 4;
+                const skorAspek = a.indikator.reduce((acc, ind, i) => {
+                  let str = String(skor[`${a.id}_${i}`] || "0").replace(",", ".");
+                  let f = parseFloat(str);
+                  return acc + (isNaN(f) ? 0 : f);
+                }, 0);
+                const skorRounded = Math.round(skorAspek * 10) / 10;
+                
+                return (
+                  <tr key={a.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                    <td style={{ padding: "6px 9px", color: "#1e293b" }}>{a.aspek}</td>
+                    <td style={{ padding: "6px 9px", textAlign: "center", color: "#64748b" }}>{maksAspek}</td>
+                    <td style={{ padding: "6px 9px", textAlign: "center" }}>
+                      {skorRounded > 0
+                        ? <span style={{ background: "#22c55e", color: "#fff", borderRadius: "5px", padding: "2px 9px", fontWeight: 700 }}>{skorRounded}</span>
+                        : <span style={{ color: "#94a3b8" }}>—</span>
+                      }
+                    </td>
+                  </tr>
+                );
+              })}
               <tr style={{ background: "#dcfce7", borderTop: "2px solid #86efac" }}>
                 <td style={{ padding: "6px 9px", fontWeight: 700, color: "#166534" }}>Total</td>
-                <td style={{ padding: "6px 9px", textAlign: "center", fontWeight: 700, color: "#166534" }}>20</td>
+                <td style={{ padding: "6px 9px", textAlign: "center", fontWeight: 700, color: "#166534" }}>60</td>
                 <td style={{ padding: "6px 9px", textAlign: "center", fontWeight: 800, fontSize: "17px", color: "#166534" }}>{total}</td>
               </tr>
             </tbody>
@@ -1707,6 +1802,7 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
         {/* Footer */}
         <FooterSkor
           total={total} maks={MAKS_B}
+          persen={parseFloat(((total / MAKS_B) * 100).toFixed(2))}
           predikat={selesai ? pred.label : null}
           label="5 aspek" sudah={selesai}
           onSimpan={handleSimpan} warna="hijau"
@@ -1815,7 +1911,7 @@ function ModalRekapYayasan({ semuaGuru, dataPredikat, pengaturanPDF, onClose }) 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "10px" }}>
             <div>
               <div style={{ fontWeight: 700, color: "#166534", fontSize: "14px" }}>📝 Rekap Template B</div>
-              <div style={{ fontSize: "12px", color: "#475569" }}>{guruB.length} guru · Maks 20 · Rata-rata: {rataB.toFixed(1)}%</div>
+              <div style={{ fontSize: "12px", color: "#475569" }}>{guruB.length} guru · Maks 60 · Rata-rata: {rataB.toFixed(1)}%</div>
             </div>
             <button
               onClick={async () => {
@@ -1878,7 +1974,7 @@ function ModalDetailGuru({ guru, indikatorA, aspekB, onClose, onEdit, pengaturan
     <Modal onClose={onClose}>
       <HeaderModal
         badge={`Template ${guru.template}`}
-        subjudul={isB ? "5 Aspek · /20" : "20 Indikator · /80"}
+        subjudul={isB ? "15 Indikator · /60" : "20 Indikator · /80"}
         judul={guru.nama}
         onClose={onClose}
         warna={isB ? "hijau" : "biru"}
@@ -1891,7 +1987,7 @@ function ModalDetailGuru({ guru, indikatorA, aspekB, onClose, onEdit, pengaturan
       }}>
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
           {[
-            { l: "Skor", v: `${guru.total}/${isB ? 20 : 80}` },
+            { l: "Skor", v: `${guru.total}/${isB ? 60 : 80}` },
             { l: "Persentase", v: `${guru.persen}%` },
             { l: "Predikat", v: pred.label },
           ].map(s => (
@@ -1944,7 +2040,18 @@ function ModalDetailGuru({ guru, indikatorA, aspekB, onClose, onEdit, pengaturan
               </thead>
               <tbody>
                 {aspekB.map((a, i) => {
-                  const s = guru.skor[a.id];
+                  // Hitung total skor per aspek dari semua indikator
+                  let totalSkorAspek = 0;
+                  if (a.indikator) {
+                    a.indikator.forEach((_, idx) => {
+                      let val = guru.skor[`${a.id}_${idx}`];
+                      if (val === undefined || val === "") val = guru.skor[a.id] || 0;
+                      let num = parseFloat(String(val).replace(",", "."));
+                      if (!isNaN(num)) totalSkorAspek += num;
+                    });
+                  }
+                  const skorMaksAspek = a.indikator ? a.indikator.length * 4 : 4;
+                  
                   return (
                     <tr key={a.id} style={{ borderTop: "1px solid #f1f5f9", background: i % 2 ? "#fafafa" : "#fff" }}>
                       {/* 1. Aspek */}
@@ -1953,17 +2060,38 @@ function ModalDetailGuru({ guru, indikatorA, aspekB, onClose, onEdit, pengaturan
                       </td>
                       {/* 2. Indikator */}
                       <td style={{ padding: "10px 9px", color: "#475569", fontSize: "11px", verticalAlign: "top", minWidth: "200px" }}>
-                        {a.indikator.map((x, j) => <div key={j} style={{ marginBottom: "2px" }}>• {x}</div>)}
+                        {a.indikator.map((x, j) => {
+                          const skorInd = guru.skor[`${a.id}_${j}`] || guru.skor[a.id] || "-";
+                          return (
+                            <div key={j} style={{ marginBottom: "4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <span>• {x}</span>
+                              <span style={{ 
+                                background: skorInd !== "-" ? WARNA_SKOR[skorInd] : "#e2e8f0", 
+                                color: "#fff", 
+                                borderRadius: "4px", 
+                                padding: "1px 6px", 
+                                fontWeight: 700, 
+                                fontSize: "10px",
+                                marginLeft: "8px"
+                              }}>
+                                {skorInd}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </td>
-                      {/* 3. Skor */}
+                      {/* 3. Skor Total Aspek */}
                       <td style={{ padding: "10px 9px", textAlign: "center", verticalAlign: "top", width: "60px" }}>
-                        <span style={{ background: WARNA_SKOR[s], color: "#fff", borderRadius: "5px", padding: "2px 8px", fontWeight: 700, fontSize: "12px" }}>
-                          {s}
-                        </span>
+                        <div style={{ fontWeight: 700, fontSize: "16px", color: "#1e293b" }}>
+                          {totalSkorAspek}
+                        </div>
+                        <div style={{ fontSize: "10px", color: "#94a3b8" }}>
+                          /{skorMaksAspek}
+                        </div>
                       </td>
                       {/* 4. Catatan */}
                       <td style={{ padding: "10px 9px", color: "#475569", lineHeight: 1.5, fontSize: "11px", verticalAlign: "top" }}>
-                        {a.catatan[s]}
+                        {guru.catatanKhusus?.[a.id] || (guru.skor[a.id] ? a.catatan[guru.skor[a.id]] : "-")}
                       </td>
                     </tr>
                   );
@@ -2574,7 +2702,7 @@ function ModalPengaturanPDF({ pengaturan, onSimpan, onClose }) {
             </div>
 
             <SubJudul>Teks Rumus</SubJudul>
-            <InputField label="Rumus persentase" value={data.rekapB.teksRumus} onChange={v => set("rekapB", "teksRumus", v)} placeholder="Persentase = (Total Skor / 20) × 100%" full />
+            <InputField label="Rumus persentase" value={data.rekapB.teksRumus} onChange={v => set("rekapB", "teksRumus", v)} placeholder="Persentase = (Total Skor / 60) × 100%" full />
 
             <SubJudul>Label Kolom Tabel</SubJudul>
             <div style={gridDua}>
@@ -2718,7 +2846,31 @@ export default function App({ sesi, onLogout }) {
     let dipasang = true;
 
     const muatData = async () => {
-      try { const g = await window.storage.get("guru-list"); if (g && dipasang) setDaftarGuru(JSON.parse(g.value)); } catch { }
+      try { 
+        const g = await window.storage.get("guru-list"); 
+        if (g && dipasang) {
+          let guruList = JSON.parse(g.value);
+          
+          // Auto-fix: Tambahkan field template jika tidak ada
+          let needFix = false;
+          guruList = guruList.map(guru => {
+            if (!guru.template) {
+              needFix = true;
+              // Deteksi berdasarkan total skor
+              return { ...guru, template: guru.total <= 60 ? "B" : "A" };
+            }
+            return guru;
+          });
+          
+          // Simpan kembali jika ada perbaikan
+          if (needFix) {
+            await window.storage.set("guru-list", JSON.stringify(guruList));
+            console.log("✅ Auto-fix: Field template ditambahkan ke data lama");
+          }
+          
+          setDaftarGuru(guruList);
+        }
+      } catch { }
       try { const a = await window.storage.get("indikator-a"); if (a && dipasang) setIndikatorA(JSON.parse(a.value)); } catch { }
       try { const b = await window.storage.get("aspek-b"); if (b && dipasang) setAspekB(JSON.parse(b.value)); } catch { }
       try { const p = await window.storage.get("predikat-cat"); if (p && dipasang) setPredikat(JSON.parse(p.value)); } catch { }
@@ -2767,7 +2919,7 @@ export default function App({ sesi, onLogout }) {
   // ── Simpan data guru (tambah atau edit) ──
   const handleSimpanGuru = async (data) => {
     // 1. Ambil data paling baru dari server untuk menghindari tertimpa
-    let listTerbaru = daftarGuru;
+    let listTerbaru = [...daftarGuru]; // COPY array agar tidak mutasi
     try {
       const res = await window.storage.get("guru-list");
       if (res && res.value) {
@@ -2794,8 +2946,9 @@ export default function App({ sesi, onLogout }) {
       }
 
       if (idxDiServer !== -1) {
-        // Pertahankan ID lama jika ada
-        listTerbaru[idxDiServer] = { ...data, id: guruAsliLokal.id || data.id };
+        // Pertahankan ID lama jika ada, tanpa memodifikasi daftarGuru asli
+        const updatedItem = { ...data, id: guruAsliLokal.id || data.id };
+        listTerbaru[idxDiServer] = updatedItem;
       } else {
         listTerbaru.push(data);
       }
@@ -2883,8 +3036,11 @@ export default function App({ sesi, onLogout }) {
 
   // Reset ke halaman 1 jika filter berubah
   useEffect(() => {
-    setHalaman(1);
-  }, [cariTeks, filterTmpl]);
+    // skip effect jika sudah di hal 1, hindari lint error cascade render
+    if (halaman !== 1) {
+      setHalaman(1);
+    }
+  }, [cariTeks, filterTmpl, halaman]);
 
   // ── Statistik header ──
   const totalGuru = daftarGuru.length;
@@ -3057,6 +3213,9 @@ export default function App({ sesi, onLogout }) {
                   const isB = g.template === "B";
                   const pred = getPrediakatGuru(g);
                   const riGuru = daftarGuru.indexOf(g); // index asli di daftarGuru
+                  
+                  // Fallback: jika template tidak ada tapi total <= 60, anggap Template B
+                  const maksimal = isB ? 60 : 80;
 
                   return (
                     <tr
@@ -3084,7 +3243,7 @@ export default function App({ sesi, onLogout }) {
                       <td style={{ padding: "10px 12px", textAlign: "center" }}>
                         <div style={{ fontWeight: 700, color: "#1e293b", fontSize: "13px" }}>
                           {g.total}
-                          <span style={{ fontSize: "10.5px", color: "#94a3b8", fontWeight: 400 }}>/{isB ? 20 : 80}</span>
+                          <span style={{ fontSize: "10.5px", color: "#94a3b8", fontWeight: 400 }}>/{maksimal}</span>
                         </div>
                         <div style={{ fontSize: "10.5px", color: "#64748b" }}>{g.persen}%</div>
                       </td>
@@ -3161,8 +3320,8 @@ export default function App({ sesi, onLogout }) {
           {[["SB ≥91%", "#d1fae5", "#065f46"], ["B ≥81%", "#dbeafe", "#1e3a8a"], ["C ≥71%", "#fef3c7", "#78350f"], ["K <71%", "#fee2e2", "#7f1d1d"]].map(([l, bg, t]) => (
             <span key={l} style={{ background: bg, color: t, borderRadius: "5px", padding: "2px 7px", fontSize: "10.5px", fontWeight: 600 }}>{l}</span>
           ))}
-          <span style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 600, marginLeft: "8px" }}>B (skor dari 20):</span>
-          {[["SB ≥17", "#d1fae5", "#065f46"], ["B ≥13", "#dbeafe", "#1e3a8a"], ["C ≥9", "#fef3c7", "#78350f"], ["K <9", "#fee2e2", "#7f1d1d"]].map(([l, bg, t]) => (
+          <span style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 600, marginLeft: "8px" }}>B (skor dari 60):</span>
+          {[["SB ≥49", "#d1fae5", "#065f46"], ["B ≥37", "#dbeafe", "#1e3a8a"], ["C ≥25", "#fef3c7", "#78350f"], ["K <25", "#fee2e2", "#7f1d1d"]].map(([l, bg, t]) => (
             <span key={l} style={{ background: bg, color: t, borderRadius: "5px", padding: "2px 7px", fontSize: "10.5px", fontWeight: 600 }}>{l}</span>
           ))}
         </div>
