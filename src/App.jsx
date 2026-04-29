@@ -534,10 +534,10 @@ function getPrediakatA(persen) {
 
 // ── Menghitung predikat Template B (berdasarkan total skor, maks 60) ──
 function getPrediakatB(total) {
-  if (total >= 49) return { label: "Sangat Baik", bg: "#d1fae5", text: "#065f46" }; // 81%
-  if (total >= 37) return { label: "Baik", bg: "#dbeafe", text: "#1e3a8a" }; // 61%
-  if (total >= 25) return { label: "Cukup", bg: "#fef3c7", text: "#78350f" }; // 41%
-  return { label: "Kurang", bg: "#fee2e2", text: "#7f1d1d" }; // ≤40%
+  if (total >= 54) return { label: "Sangat Baik", bg: "#d1fae5", text: "#065f46" }; // 90%
+  if (total >= 45) return { label: "Baik", bg: "#dbeafe", text: "#1e3a8a" }; // 75%
+  if (total >= 36) return { label: "Cukup", bg: "#fef3c7", text: "#78350f" }; // 60%
+  return { label: "Kurang", bg: "#fee2e2", text: "#7f1d1d" }; // <59.9% (0-35)
 }
 
 // ── Mendapatkan predikat dari data guru (A atau B) ──
@@ -710,7 +710,7 @@ async function cetakPDF_B(guru, aspekB, ps, returnBlob = false) {
   const dataAspek = aspekB.map((a, i) => ({
     id: i + 1,
     nama_aspek: a.aspek,
-    indikator: a.indikator ? a.indikator.map((txt, idx) => `${idx + 1}. ${txt}`).join("\n") : "",
+    indikator: a.indikator ? a.indikator.map((txt, idx) => `${idx + 1}. ${txt}`).join("\n") : "", // Single newline - rapat
     skor: (function() {
       let sum = 0;
       if (a.indikator) {
@@ -722,6 +722,17 @@ async function cetakPDF_B(guru, aspekB, ps, returnBlob = false) {
         });
       }
       return Math.round(sum * 10) / 10;
+    })(),
+    skor_per_indikator: (function() {
+      // Skor per indikator dengan spasi ekstra agar sejajar dengan indikator yang rapat
+      if (a.indikator) {
+        return a.indikator.map((txt, idx) => {
+          let val = guru.skor[`${a.id}_${idx}`];
+          if (val === undefined || val === "") val = guru.skor[a.id] || "-";
+          return String(val).replace(".", ",");
+        }).join("\n\n"); // Double newline untuk jarak yang sesuai
+      }
+      return "-";
     })(),
     skor_maks_aspek: a.indikator ? a.indikator.length * 4 : 4, // Jumlah indikator × 4
     catatan: guru.catatanKhusus?.[a.id] !== undefined ? guru.catatanKhusus[a.id] : (guru.skor[a.id] ? a.catatan[guru.skor[a.id]] : "")
@@ -760,14 +771,17 @@ async function cetakRekapA(guruListA, catatanPerGuru, kesimpulan, ps) {
     return;
   }
 
+  // Data guru sudah diproses (gabung atau lengkap) dari modal
   const dataGuru = guruListA.map((g, i) => ({
     no: i + 1,
     nuptk: g.nuptk || "-",
     nama: g.nama,
     mapel: g.mapel,
-    total: g.total,
-    persen: g.persen,
-    predikat: g.persen >= 91 ? "Sangat Baik" : g.persen >= 81 ? "Baik" : g.persen >= 71 ? "Cukup" : "Kurang",
+    total: typeof g.total === 'number' ? g.total.toFixed(1).replace(/\.0$/, '') : g.total,
+    persen: typeof g.persen === 'number' ? g.persen.toFixed(2) : g.persen,
+    predikat: typeof g.persen === 'number' 
+      ? (g.persen >= 91 ? "Sangat Baik" : g.persen >= 81 ? "Baik" : g.persen >= 71 ? "Cukup" : "Kurang")
+      : getPrediakatA(g.persen).label,
     catatan_ks: catatanPerGuru[i] || "-"
   }));
 
@@ -800,15 +814,18 @@ async function cetakRekapB(guruListB, catatanPerGuru, kesimpulan, ps) {
     return;
   }
 
+  // Data guru sudah diproses (gabung atau lengkap) dari modal
   const dataGuru = guruListB.map((g, i) => ({
     no: i + 1,
     nuptk: g.nuptk || "-",
     nama: g.nama,
     mapel: g.mapel,
-    total: g.total,
+    total: typeof g.total === 'number' ? g.total.toFixed(1).replace(/\.0$/, '') : g.total,
     skor_maksimal: 60,
-    persen: ((g.total / 60) * 100).toFixed(2).replace(/\.00$/, ''),
-    predikat: getPrediakatB(g.total).label, // pakai fungsi helper yg up to date
+    persen: typeof g.total === 'number' 
+      ? ((g.total / 60) * 100).toFixed(2).replace(/\.00$/, '')
+      : ((g.total / 60) * 100).toFixed(2).replace(/\.00$/, ''),
+    predikat: getPrediakatB(g.total).label,
     catatan_ks: catatanPerGuru[i] || "-"
   }));
 
@@ -1819,9 +1836,67 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
 
 // ── Modal: Rekap Yayasan (2 PDF terpisah: A & B) ──
 function ModalRekapYayasan({ semuaGuru, dataPredikat, pengaturanPDF, onClose }) {
+  // State untuk toggle mode rekap
+  const [modeGabung, setModeGabung] = useState(true); // true = gabung (guru unik), false = lengkap (semua supervisi)
+  
+  // Fungsi helper untuk mengelompokkan guru berdasarkan nama
+  const groupGuruByName = (guruList) => {
+    const grouped = {};
+    guruList.forEach((g) => {
+      const namaKey = g.nama.trim().toLowerCase();
+      if (!grouped[namaKey]) {
+        grouped[namaKey] = {
+          nama: g.nama,
+          nuptk: g.nuptk || "-",
+          mapel: g.mapel,
+          template: g.template,
+          supervisi: [],
+          catatanSingkat: g.catatanSingkat || ""
+        };
+      }
+      grouped[namaKey].supervisi.push(g);
+    });
+    
+    // Hitung rata-rata untuk setiap guru
+    return Object.values(grouped).map(g => {
+      const jumlahSupervisi = g.supervisi.length;
+      if (g.template === "A") {
+        const totalSkor = g.supervisi.reduce((acc, s) => acc + s.total, 0);
+        const rataRataSkor = totalSkor / jumlahSupervisi;
+        const rataRataPersen = ((rataRataSkor / 80) * 100);
+        return {
+          ...g,
+          total: rataRataSkor,
+          persen: rataRataPersen,
+          jumlahSupervisi: jumlahSupervisi,
+          // Ambil catatan singkat dari supervisi terakhir jika ada
+          catatanSingkat: g.supervisi[g.supervisi.length - 1].catatanSingkat || g.catatanSingkat
+        };
+      } else {
+        const totalSkor = g.supervisi.reduce((acc, s) => acc + s.total, 0);
+        const rataRataSkor = totalSkor / jumlahSupervisi;
+        return {
+          ...g,
+          total: rataRataSkor,
+          persen: ((rataRataSkor / 60) * 100),
+          jumlahSupervisi: jumlahSupervisi,
+          catatanSingkat: g.supervisi[g.supervisi.length - 1].catatanSingkat || g.catatanSingkat
+        };
+      }
+    });
+  };
+
   // Pisahkan guru berdasarkan template
-  const guruA = semuaGuru.filter(g => g.template === "A");
-  const guruB = semuaGuru.filter(g => g.template === "B");
+  const guruALengkap = semuaGuru.filter(g => g.template === "A");
+  const guruBLengkap = semuaGuru.filter(g => g.template === "B");
+  
+  // Kelompokkan berdasarkan nama (untuk mode gabung)
+  const guruAGabung = groupGuruByName(guruALengkap);
+  const guruBGabung = groupGuruByName(guruBLengkap);
+  
+  // Pilih data berdasarkan mode
+  const guruA = modeGabung ? guruAGabung : guruALengkap;
+  const guruB = modeGabung ? guruBGabung : guruBLengkap;
 
   // Inisialisasi catatan singkat per guru (dari data guru atau dari predikat)
   const [catatanA, setCatatanA] = useState(
@@ -1830,6 +1905,12 @@ function ModalRekapYayasan({ semuaGuru, dataPredikat, pengaturanPDF, onClose }) 
   const [catatanB, setCatatanB] = useState(
     guruB.map(g => g.catatanSingkat || dataPredikat[getPrediakatB(g.total).label]?.catatanSingkat || "")
   );
+  
+  // Update catatan saat mode berubah
+  useEffect(() => {
+    setCatatanA(guruA.map(g => g.catatanSingkat || dataPredikat[getPrediakatA(g.persen).label]?.catatanSingkat || ""));
+    setCatatanB(guruB.map(g => g.catatanSingkat || dataPredikat[getPrediakatB(g.total).label]?.catatanSingkat || ""));
+  }, [modeGabung]);
 
   // Hitung rata-rata dan jumlah predikat
   const rataA = guruA.length ? guruA.reduce((a, g) => a + g.persen, 0) / guruA.length : 0;
@@ -1853,6 +1934,11 @@ function ModalRekapYayasan({ semuaGuru, dataPredikat, pengaturanPDF, onClose }) 
         <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 500 }}>{guru.nuptk || "—"}</div>
         <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#1e293b" }}>{guru.nama}</div>
         <div style={{ fontSize: "10.5px", color: "#64748b" }}>{guru.mapel}</div>
+        {modeGabung && guru.jumlahSupervisi > 1 && (
+          <div style={{ fontSize: "9px", color: "#f59e0b", fontWeight: 600, marginTop: "2px" }}>
+            📊 {guru.jumlahSupervisi}x supervisi (rata-rata)
+          </div>
+        )}
         <BadgePredikat label={pred.label} ukuran="kecil" />
       </div>
       <textarea value={catatan} onChange={e => onUbah(e.target.value)} rows={2} style={{ ...styleTextarea, flex: 1 }} />
@@ -1862,6 +1948,54 @@ function ModalRekapYayasan({ semuaGuru, dataPredikat, pengaturanPDF, onClose }) 
   return (
     <Modal onClose={onClose}>
       <HeaderModal judul="Rekap Penilaian" subjudul="Laporan Kepala Sekolah — 2 Laporan Word" onClose={onClose} />
+      
+      {/* Toggle Mode Rekap */}
+      <div style={{ padding: "12px 22px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", justifyContent: "space-between", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: "11px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Mode Rekap</div>
+            <div style={{ fontSize: "10px", color: "#64748b" }}>
+              {modeGabung 
+                ? `📊 Guru Unik: ${guruAGabung.length + guruBGabung.length} guru (rata-rata dari ${guruALengkap.length + guruBLengkap.length} supervisi)`
+                : `📋 Data Lengkap: ${guruALengkap.length + guruBLengkap.length} supervisi (semua data ditampilkan)`
+              }
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "6px" }}>
+            <button
+              onClick={() => setModeGabung(true)}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "6px",
+                border: modeGabung ? "2px solid #2563eb" : "1px solid #e2e8f0",
+                background: modeGabung ? "#eff6ff" : "#fff",
+                color: modeGabung ? "#1e3a8a" : "#64748b",
+                fontSize: "11px",
+                fontWeight: modeGabung ? 700 : 600,
+                cursor: "pointer"
+              }}
+            >
+              🔗 Gabung (Guru Unik)
+            </button>
+            <button
+              onClick={() => setModeGabung(false)}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "6px",
+                border: !modeGabung ? "2px solid #2563eb" : "1px solid #e2e8f0",
+                background: !modeGabung ? "#eff6ff" : "#fff",
+                color: !modeGabung ? "#1e3a8a" : "#64748b",
+                fontSize: "11px",
+                fontWeight: !modeGabung ? 700 : 600,
+                cursor: "pointer"
+              }}
+            >
+              📋 Lengkap (Semua Data)
+            </button>
+          </div>
+        </div>
+      </div>
+      
       <div style={{ padding: "16px 22px", display: "flex", flexDirection: "column", gap: "16px", maxHeight: "78vh", overflowY: "auto" }}>
 
         {/* ── Rekap Template A ── */}
@@ -1869,13 +2003,13 @@ function ModalRekapYayasan({ semuaGuru, dataPredikat, pengaturanPDF, onClose }) 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "10px" }}>
             <div>
               <div style={{ fontWeight: 700, color: "#1e3a5f", fontSize: "14px" }}>📋 Rekap Template A</div>
-              <div style={{ fontSize: "12px", color: "#475569" }}>{guruA.length} guru · Maks 80 · Rata-rata: {rataA.toFixed(1)}%</div>
+              <div style={{ fontSize: "12px", color: "#475569" }}>{guruA.length} {modeGabung ? 'guru' : 'supervisi'} · Maks 80 · Rata-rata: {rataA.toFixed(1)}%</div>
             </div>
             <button
               onClick={async () => {
                 if (!guruA.length) return alert("Belum ada data Template A!");
                 setLoadingA(true);
-                try { await cetakRekapA(guruA, catatanA, kesimpulanA, pengaturanPDF); } catch { alert("Gagal unduh laporan A."); }
+                try { await cetakRekapA(modeGabung ? guruA : guruALengkap, catatanA, kesimpulanA, pengaturanPDF); } catch { alert("Gagal unduh laporan A."); }
                 setLoadingA(false);
               }}
               disabled={loadingA}
@@ -1911,13 +2045,13 @@ function ModalRekapYayasan({ semuaGuru, dataPredikat, pengaturanPDF, onClose }) 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "10px" }}>
             <div>
               <div style={{ fontWeight: 700, color: "#166534", fontSize: "14px" }}>📝 Rekap Template B</div>
-              <div style={{ fontSize: "12px", color: "#475569" }}>{guruB.length} guru · Maks 60 · Rata-rata: {rataB.toFixed(1)}%</div>
+              <div style={{ fontSize: "12px", color: "#475569" }}>{guruB.length} {modeGabung ? 'guru' : 'supervisi'} · Maks 60 · Rata-rata: {rataB.toFixed(1)}%</div>
             </div>
             <button
               onClick={async () => {
                 if (!guruB.length) return alert("Belum ada data Template B!");
                 setLoadingB(true);
-                try { await cetakRekapB(guruB, catatanB, kesimpulanB, pengaturanPDF); } catch { alert("Gagal unduh laporan B."); }
+                try { await cetakRekapB(modeGabung ? guruB : guruBLengkap, catatanB, kesimpulanB, pengaturanPDF); } catch { alert("Gagal unduh laporan B."); }
                 setLoadingB(false);
               }}
               disabled={loadingB}
@@ -2761,7 +2895,8 @@ function ModalPengaturanPDF({ pengaturan, onSimpan, onClose }) {
 
             <GuideSection judul="3. Khusus Template B (5 Aspek)">
               <GuideItem tag="{total}" desc="Total Skor Diperoleh" />
-              <GuideItem tag="{skor_maks_total}" desc="Skor Maksimal (Angka 20)" />
+              <GuideItem tag="{skor_maks_total}" desc="Skor Maksimal (Angka 60)" />
+              <GuideItem tag="{persen}" desc="Persentase (dari total/60 × 100)" />
               <GuideItem tag="{predikat}" desc="Predikat (Sangat Baik/dll)" />
               <GuideItem tag="{catatanB}" desc="Catatan & Saran Supervisi (Section E)" />
               <GuideItem tag="{catatan_sudahB}" desc="Catatan Kesimpulan (Opsi: Sudah)" />
@@ -2770,8 +2905,11 @@ function ModalPengaturanPDF({ pengaturan, onSimpan, onClose }) {
               <GuideItem tag="{kesimpulan_perluB}" desc="Teks Opsi 2 (Perlu Pembinaan) + Simbol" />
               <div style={{ marginTop: "8px", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "10px" }}>
                 <div style={{ fontSize: "11px", fontWeight: 700, color: "#475569", marginBottom: "5px" }}>Tabel Aspek (Gunakan loop)</div>
-                <div style={{ fontFamily: "monospace", fontSize: "11px", background: "#f8fafc", padding: "6px", borderRadius: "4px" }}>
+                <div style={{ fontFamily: "monospace", fontSize: "11px", background: "#f8fafc", padding: "6px", borderRadius: "4px", marginBottom: "6px" }}>
                   <strong>{"{#aspek}"}</strong> ... {"{id} | {nama_aspek} | {indikator} | {skor} | {skor_maks_aspek} | {catatan}"} ... <strong>{"{/aspek}"}</strong>
+                </div>
+                <div style={{ fontSize: "10px", color: "#64748b", marginTop: "4px" }}>
+                  <strong>💡 Tip:</strong> Gunakan <code style={{ background: "#f1f5f9", padding: "1px 4px", borderRadius: "3px" }}>{"{skor_per_indikator}"}</code> untuk menampilkan skor individual per indikator (1-4) dalam kolom terpisah. Format: skor dipisah dengan double newline agar sejajar dengan indikator yang ditampilkan rapat.
                 </div>
               </div>
             </GuideSection>
@@ -3042,13 +3180,45 @@ export default function App({ sesi, onLogout }) {
     }
   }, [cariTeks, filterTmpl, halaman]);
 
-  // ── Statistik header ──
-  const totalGuru = daftarGuru.length;
+  // ── Fungsi helper untuk mengelompokkan guru berdasarkan nama (untuk statistik) ──
+  const getGuruUnik = (guruList) => {
+    const grouped = {};
+    guruList.forEach((g) => {
+      const namaKey = g.nama.trim().toLowerCase();
+      if (!grouped[namaKey]) {
+        grouped[namaKey] = {
+          nama: g.nama,
+          template: g.template,
+          supervisi: []
+        };
+      }
+      grouped[namaKey].supervisi.push(g);
+    });
+    
+    return Object.values(grouped).map(g => {
+      const jumlahSupervisi = g.supervisi.length;
+      if (g.template === "A") {
+        const totalSkor = g.supervisi.reduce((acc, s) => acc + s.total, 0);
+        const rataRataSkor = totalSkor / jumlahSupervisi;
+        const rataRataPersen = ((rataRataSkor / 80) * 100);
+        return { ...g.supervisi[0], total: rataRataSkor, persen: rataRataPersen };
+      } else {
+        const totalSkor = g.supervisi.reduce((acc, s) => acc + s.total, 0);
+        const rataRataSkor = totalSkor / jumlahSupervisi;
+        return { ...g.supervisi[0], total: rataRataSkor, persen: ((rataRataSkor / 60) * 100) };
+      }
+    });
+  };
+
+  // ── Statistik header (berdasarkan guru unik) ──
+  const guruUnik = getGuruUnik(daftarGuru);
+  const totalGuru = guruUnik.length;
+  const totalSupervisi = daftarGuru.length; // Total semua supervisi
   const rataRata = totalGuru
-    ? (daftarGuru.reduce((a, g) => a + (g.template === "B" ? (g.total / MAKS_B) * 100 : g.persen), 0) / totalGuru).toFixed(1)
+    ? (guruUnik.reduce((a, g) => a + (g.template === "B" ? (g.total / MAKS_B) * 100 : g.persen), 0) / totalGuru).toFixed(1)
     : 0;
   const hitungPred = { "Sangat Baik": 0, "Baik": 0, "Cukup": 0, "Kurang": 0 };
-  daftarGuru.forEach(g => { hitungPred[getPrediakatGuru(g).label]++; });
+  guruUnik.forEach(g => { hitungPred[getPrediakatGuru(g).label]++; });
 
 
   // ── Tampilan Loading ──
@@ -3126,22 +3296,29 @@ export default function App({ sesi, onLogout }) {
           {/* Statistik ringkas */}
           <div style={{ display: "flex", gap: "7px", marginTop: "14px", flexWrap: "wrap" }}>
             {[
-              { label: "Total", nilai: totalGuru, ikon: "👨‍🏫" },
+              { label: "Guru Unik", nilai: totalGuru, ikon: "👨‍🏫", tooltip: `${totalSupervisi} total supervisi` },
               { label: "Rata-rata", nilai: `${rataRata}%`, ikon: "📊" },
-              { label: "Tmpl A", nilai: daftarGuru.filter(g => g.template === "A").length, ikon: "🔵" },
-              { label: "Tmpl B", nilai: daftarGuru.filter(g => g.template === "B").length, ikon: "🟢" },
+              { label: "Tmpl A", nilai: daftarGuru.filter(g => g.template === "A").length, ikon: "🔵", tooltip: "Total supervisi Template A" },
+              { label: "Tmpl B", nilai: daftarGuru.filter(g => g.template === "B").length, ikon: "🟢", tooltip: "Total supervisi Template B" },
               { label: "Sangat Baik", nilai: hitungPred["Sangat Baik"], ikon: "⭐" },
               { label: "Baik", nilai: hitungPred["Baik"], ikon: "✅" },
               { label: "Cukup", nilai: hitungPred["Cukup"], ikon: "🟡" },
               { label: "Kurang", nilai: hitungPred["Kurang"], ikon: "🔴" },
             ].map(s => (
-              <div key={s.label} style={{ background: "rgba(255,255,255,0.1)", borderRadius: "8px", padding: "7px 11px", textAlign: "center", flex: "1 1 65px" }}>
+              <div key={s.label} title={s.tooltip || s.label} style={{ background: "rgba(255,255,255,0.1)", borderRadius: "8px", padding: "7px 11px", textAlign: "center", flex: "1 1 65px", cursor: s.tooltip ? "help" : "default" }}>
                 <div style={{ fontSize: "14px" }}>{s.ikon}</div>
                 <div style={{ color: "#fff", fontWeight: 800, fontSize: "15px" }}>{s.nilai}</div>
                 <div style={{ color: "#93c5fd", fontSize: "9px" }}>{s.label}</div>
               </div>
             ))}
           </div>
+          
+          {/* Info tambahan jika ada supervisi ganda */}
+          {totalSupervisi > totalGuru && (
+            <div style={{ marginTop: "8px", padding: "6px 10px", background: "rgba(251, 191, 36, 0.15)", border: "1px solid rgba(251, 191, 36, 0.3)", borderRadius: "6px", fontSize: "10px", color: "#fde68a" }}>
+              💡 <strong>{totalSupervisi} total supervisi</strong> dari <strong>{totalGuru} guru unik</strong>. Statistik predikat dihitung berdasarkan rata-rata per guru.
+            </div>
+          )}
         </div>
       </div>
 
@@ -3321,7 +3498,7 @@ export default function App({ sesi, onLogout }) {
             <span key={l} style={{ background: bg, color: t, borderRadius: "5px", padding: "2px 7px", fontSize: "10.5px", fontWeight: 600 }}>{l}</span>
           ))}
           <span style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 600, marginLeft: "8px" }}>B (skor dari 60):</span>
-          {[["SB ≥49", "#d1fae5", "#065f46"], ["B ≥37", "#dbeafe", "#1e3a8a"], ["C ≥25", "#fef3c7", "#78350f"], ["K <25", "#fee2e2", "#7f1d1d"]].map(([l, bg, t]) => (
+          {[["SB ≥54", "#d1fae5", "#065f46"], ["B ≥45", "#dbeafe", "#1e3a8a"], ["C ≥36", "#fef3c7", "#78350f"], ["K <36", "#fee2e2", "#7f1d1d"]].map(([l, bg, t]) => (
             <span key={l} style={{ background: bg, color: t, borderRadius: "5px", padding: "2px 7px", fontSize: "10.5px", fontWeight: 600 }}>{l}</span>
           ))}
         </div>
