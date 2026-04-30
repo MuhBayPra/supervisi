@@ -868,10 +868,10 @@ async function cetakRekapA(guruListA, catatanPerGuru, kesimpulan, ps) {
     stat_total: `${totalGuru} Guru`,
     stat_rata: rataRata,
     stat_mayoritas: mayoritas,
-    stat_sangat_baik: `${hitung["Sangat Baik"]} Guru`,
-    stat_baik: `${hitung["Baik"]} Guru`,
-    stat_cukup: `${hitung["Cukup"]} Guru`,
-    stat_pembinaan: `${hitung["Kurang"]} Guru`,
+    stat_sangat_baik: `${hitung["Sangat Baik"]} Guru (${((hitung["Sangat Baik"] / totalGuru) * 100).toFixed(1)}%)`,
+    stat_baik: `${hitung["Baik"]} Guru (${((hitung["Baik"] / totalGuru) * 100).toFixed(1)}%)`,
+    stat_cukup: `${hitung["Cukup"]} Guru (${((hitung["Cukup"] / totalGuru) * 100).toFixed(1)}%)`,
+    stat_pembinaan: `${hitung["Kurang"]} Guru (${((hitung["Kurang"] / totalGuru) * 100).toFixed(1)}%)`,
   }, `RekapYayasan_TemplateA.docx`);
 }
 
@@ -912,10 +912,10 @@ async function cetakRekapB(guruListB, catatanPerGuru, kesimpulan, ps) {
     stat_total: `${totalGuru} Guru`,
     stat_rata: rataRata,
     stat_mayoritas: mayoritas,
-    stat_sangat_baik: `${hitung["Sangat Baik"]} Guru`,
-    stat_baik: `${hitung["Baik"]} Guru`,
-    stat_cukup: `${hitung["Cukup"]} Guru`,
-    stat_pembinaan: `${hitung["Kurang"]} Guru`,
+    stat_sangat_baik: `${hitung["Sangat Baik"]} Guru (${((hitung["Sangat Baik"] / totalGuru) * 100).toFixed(1)}%)`,
+    stat_baik: `${hitung["Baik"]} Guru (${((hitung["Baik"] / totalGuru) * 100).toFixed(1)}%)`,
+    stat_cukup: `${hitung["Cukup"]} Guru (${((hitung["Cukup"] / totalGuru) * 100).toFixed(1)}%)`,
+    stat_pembinaan: `${hitung["Kurang"]} Guru (${((hitung["Kurang"] / totalGuru) * 100).toFixed(1)}%)`,
   }, `RekapYayasan_TemplateB.docx`);
 }
 
@@ -1207,15 +1207,16 @@ function TombolSkor({ nilai, aktif, onClick }) {
       style={{
         width: "34px", height: "34px",
         borderRadius: "8px",
-        border: "none",
+        border: aktif ? `3px solid ${WARNA_SKOR[nilai]}` : "2px solid #e2e8f0",
         fontWeight: 700,
         fontSize: "14px",
         cursor: "pointer",
-        background: aktif ? WARNA_SKOR[nilai] : "#e2e8f0",
+        background: aktif ? WARNA_SKOR[nilai] : "#fff",
         color: aktif ? "#fff" : "#64748b",
-        transform: aktif ? "scale(1.12)" : "scale(1)",
-        transition: "all 0.12s",
+        transform: aktif ? "scale(1.15)" : "scale(1)",
+        transition: "all 0.15s",
         flexShrink: 0,
+        boxShadow: aktif ? `0 4px 12px ${WARNA_SKOR[nilai]}50` : "0 1px 3px rgba(0,0,0,0.1)",
       }}
     >
       {nilai}
@@ -1228,6 +1229,15 @@ function TombolSkor({ nilai, aktif, onClick }) {
 function KartuIndikator({ indikator, skorSaat, onSkorPilih, catatanManual, onCatatanUbah }) {
   const s = skorSaat;
   const teksCatatan = catatanManual !== undefined ? catatanManual : (s > 0 ? indikator.catatan[s] : "");
+  
+  // Label untuk setiap skor
+  const labelSkor = {
+    1: "Kurang",
+    2: "Cukup", 
+    3: "Baik",
+    4: "Sangat Baik"
+  };
+  
   return (
     <div style={{
       border: `1.5px solid ${s > 0 ? "#bfdbfe" : "#e2e8f0"}`,
@@ -1247,10 +1257,40 @@ function KartuIndikator({ indikator, skorSaat, onSkorPilih, catatanManual, onCat
             {indikator.judul}
           </span>
         </div>
-        <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
-          {[1, 2, 3, 4].map(n => (
-            <TombolSkor key={n} nilai={n} aktif={s === n} onClick={() => onSkorPilih(n)} />
-          ))}
+        <div style={{ display: "flex", gap: "4px", flexShrink: 0, alignItems: "center", flexDirection: "column" }}>
+          <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+            {/* Status poin yang dipilih */}
+            {s > 0 && (
+              <div style={{ 
+                fontSize: "14px", 
+                fontWeight: 700, 
+                color: WARNA_SKOR[s], 
+                background: `${WARNA_SKOR[s]}15`,
+                padding: "4px 10px", 
+                borderRadius: "6px",
+                marginRight: "6px",
+                border: `2px solid ${WARNA_SKOR[s]}`,
+                animation: "fadeIn 0.3s"
+              }}>
+                Poin {s} - {labelSkor[s]}
+              </div>
+            )}
+            {[1, 2, 3, 4].map(n => (
+              <TombolSkor key={n} nilai={n} aktif={s === n} onClick={() => onSkorPilih(n)} />
+            ))}
+          </div>
+          {/* Konfirmasi di bawah tombol */}
+          {s > 0 && (
+            <div style={{ 
+              fontSize: "11px", 
+              fontWeight: 600, 
+              color: WARNA_SKOR[s],
+              marginTop: "4px",
+              animation: "fadeIn 0.3s"
+            }}>
+              ✓ Anda sudah pilih poin {s}!
+            </div>
+          )}
         </div>
       </div>
       {/* Catatan otomatis / manual (muncul saat skor dipilih) */}
@@ -1336,33 +1376,70 @@ function KartuAspek({ aspek, skorSaat, onSkorPilih, catatanManual, onCatatanUbah
       
       {/* Setiap Indikator & Input Skor */}
       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        {aspek.indikator.map((ind, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", background: "#fff", padding: "6px 10px", border: "1px solid #cbd5e1", borderRadius: "6px" }}>
-            <span style={{ fontSize: "12px", color: "#334155" }}>• {ind}</span>
-            <input 
-              type="text"
-              value={skorSaat[i] !== undefined ? skorSaat[i] : ""}
-              onChange={(e) => {
-                let val = e.target.value;
-                // allow numbers and comma/dot
-                if (/^[0-9]*[.,]?[0-9]*$/.test(val)) {
-                  onSkorPilih(i, val);
-                }
-              }}
-              placeholder="0.0"
-              style={{
-                width: "48px",
-                padding: "4px",
-                border: "1.5px solid #94a3b8",
-                borderRadius: "5px",
-                textAlign: "center",
-                fontSize: "13px",
-                fontWeight: "bold",
-                color: "#0f172a"
-              }}
-            />
-          </div>
-        ))}
+        {aspek.indikator.map((ind, i) => {
+          const nilaiSkor = skorSaat[i] !== undefined ? skorSaat[i] : "";
+          const adaNilai = nilaiSkor !== "" && nilaiSkor !== undefined;
+          
+          return (
+            <div key={i} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", background: "#fff", padding: "6px 10px", border: "1px solid #cbd5e1", borderRadius: "6px" }}>
+                <span style={{ fontSize: "12px", color: "#334155", flex: 1 }}>• {ind}</span>
+                
+                {/* Status poin yang diketik */}
+                {adaNilai && (
+                  <div style={{ 
+                    fontSize: "13px", 
+                    fontWeight: 700, 
+                    color: "#16a34a", 
+                    background: "#f0fdf4",
+                    padding: "3px 8px", 
+                    borderRadius: "5px",
+                    border: "1.5px solid #bbf7d0",
+                    marginRight: "6px"
+                  }}>
+                    Poin: {nilaiSkor}
+                  </div>
+                )}
+                
+                <input 
+                  type="text"
+                  value={nilaiSkor}
+                  onChange={(e) => {
+                    let val = e.target.value;
+                    // allow numbers and comma/dot
+                    if (/^[0-9]*[.,]?[0-9]*$/.test(val)) {
+                      onSkorPilih(i, val);
+                    }
+                  }}
+                  placeholder="0.0"
+                  style={{
+                    width: "48px",
+                    padding: "4px",
+                    border: "1.5px solid #94a3b8",
+                    borderRadius: "5px",
+                    textAlign: "center",
+                    fontSize: "13px",
+                    fontWeight: "bold",
+                    color: "#0f172a"
+                  }}
+                />
+              </div>
+              
+              {/* Konfirmasi di bawah input */}
+              {adaNilai && (
+                <div style={{ 
+                  fontSize: "11px", 
+                  fontWeight: 600, 
+                  color: "#16a34a",
+                  paddingLeft: "10px",
+                  animation: "fadeIn 0.3s"
+                }}>
+                  ✓ Anda sudah pilih poin {nilaiSkor}!
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Catatan manual */}
@@ -1536,6 +1613,7 @@ function FormA({ guru, indikator, onSimpan, onClose, dataPredikat }) {
 
   const [skor, setSkor] = useState(initSkor);
   const [catatanKhusus, setCatatanKhusus] = useState(initCatatan);
+  const [adaPerubahan, setAdaPerubahan] = useState(false); // Track perubahan
   const [info, setInfo] = useState({
     nuptk: guru?.nuptk || "",
     nama: guru?.nama || "",
@@ -1562,24 +1640,52 @@ function FormA({ guru, indikator, onSimpan, onClose, dataPredikat }) {
     kelompok[ind.kat].push(ind);
   });
 
+  // Update skor dan set flag perubahan
+  const updateSkor = (id, nilai) => {
+    setSkor(v => ({ ...v, [id]: nilai }));
+    setAdaPerubahan(true);
+  };
+
+  // Update info dan set flag perubahan
+  const updateInfo = (key, nilai) => {
+    setInfo(v => ({ ...v, [key]: nilai }));
+    setAdaPerubahan(true);
+  };
+
   // Isi otomatis catatan berdasarkan predikat
   const isiOtomatis = () => {
     const pc = dataPredikat[pred.label];
-    if (pc) setInfo(v => ({ ...v, kekuatan: pc.kekuatan, areaPerbaikan: pc.areaPerbaikan, rekomendasi: pc.rekomendasi, catatanSingkat: pc.catatanSingkat }));
+    if (pc) {
+      setInfo(v => ({ ...v, kekuatan: pc.kekuatan, areaPerbaikan: pc.areaPerbaikan, rekomendasi: pc.rekomendasi, catatanSingkat: pc.catatanSingkat }));
+      setAdaPerubahan(true);
+    }
   };
 
   // Simpan data
   const handleSimpan = () => {
     if (!info.nama.trim()) return alert("Nama guru wajib diisi!");
     if (!selesai) return alert("Harap isi semua 20 indikator terlebih dahulu!");
-    onSimpan({ ...info, skor, catatanKhusus, total, persen: parseFloat(persen), template: "A" });
+    
+    // Pop-up konfirmasi di tengah layar
+    const konfirmasi = window.confirm(
+      `Simpan data supervisi?\n\n` +
+      `Guru: ${info.nama}\n` +
+      `Total Skor: ${total}/${MAKS_A}\n` +
+      `Persentase: ${persen}%\n` +
+      `Predikat: ${pred.label}`
+    );
+    
+    if (konfirmasi) {
+      onSimpan({ ...info, skor, catatanKhusus, total, persen: parseFloat(persen), template: "A" });
+      setAdaPerubahan(false);
+    }
   };
 
   return (
     <Modal onClose={onClose}>
       <HeaderModal
         badge="Template A"
-        subjudul="20 Indikator · Maks 80"
+        subjudul={adaPerubahan ? "⚠️ Ada perubahan belum disimpan" : "20 Indikator · Maks 80"}
         judul="Form Supervisi Guru"
         onClose={onClose}
       />
@@ -1588,14 +1694,14 @@ function FormA({ guru, indikator, onSimpan, onClose, dataPredikat }) {
         {/* A. Identitas */}
         <SectionCard judul="A. Identitas Guru">
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "9px" }}>
-            <InputField label="NUPTK" value={info.nuptk} onChange={v => setInfo({ ...info, nuptk: v })} placeholder="Nomor Unik Pendidik" />
-            <InputField label="Nama Guru" value={info.nama} onChange={v => setInfo({ ...info, nama: v })} placeholder="Nama lengkap + gelar" />
-            <InputField label="Mata Pelajaran" value={info.mapel} onChange={v => setInfo({ ...info, mapel: v })} placeholder="Nama mata pelajaran" />
-            <InputField label="Kelas/Program" value={info.kelas} onChange={v => setInfo({ ...info, kelas: v })} placeholder="Mis: X PPLG 1" />
-            <InputField label="Supervisor" value={info.supervisor} onChange={v => setInfo({ ...info, supervisor: v })} placeholder="Nama supervisor" />
+            <InputField label="NUPTK" value={info.nuptk} onChange={v => { setInfo({ ...info, nuptk: v }); setAdaPerubahan(true); }} placeholder="Nomor Unik Pendidik" />
+            <InputField label="Nama Guru" value={info.nama} onChange={v => { setInfo({ ...info, nama: v }); setAdaPerubahan(true); }} placeholder="Nama lengkap + gelar" />
+            <InputField label="Mata Pelajaran" value={info.mapel} onChange={v => { setInfo({ ...info, mapel: v }); setAdaPerubahan(true); }} placeholder="Nama mata pelajaran" />
+            <InputField label="Kelas/Program" value={info.kelas} onChange={v => { setInfo({ ...info, kelas: v }); setAdaPerubahan(true); }} placeholder="Mis: X PPLG 1" />
+            <InputField label="Supervisor" value={info.supervisor} onChange={v => { setInfo({ ...info, supervisor: v }); setAdaPerubahan(true); }} placeholder="Nama supervisor" />
             <div>
               <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", display: "block", marginBottom: "4px" }}>Tanggal Supervisi</label>
-              <DatePicker value={info.tanggal} onChange={v => setInfo({ ...info, tanggal: v })} />
+              <DatePicker value={info.tanggal} onChange={v => { setInfo({ ...info, tanggal: v }); setAdaPerubahan(true); }} />
             </div>
           </div>
         </SectionCard>
@@ -1625,9 +1731,13 @@ function FormA({ guru, indikator, onSimpan, onClose, dataPredikat }) {
                   onSkorPilih={n => {
                     setSkor({ ...skor, [ind.id]: n });
                     setCatatanKhusus({ ...catatanKhusus, [ind.id]: ind.catatan[n] });
+                    setAdaPerubahan(true);
                   }}
                   catatanManual={catatanKhusus[ind.id]}
-                  onCatatanUbah={teks => setCatatanKhusus({ ...catatanKhusus, [ind.id]: teks })}
+                  onCatatanUbah={teks => { 
+                    setCatatanKhusus({ ...catatanKhusus, [ind.id]: teks });
+                    setAdaPerubahan(true);
+                  }}
                 />
               ))}
             </div>
@@ -1682,6 +1792,7 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
 
   const [skor, setSkor] = useState(initSkor);
   const [catatanKhusus, setCatatanKhusus] = useState(initCatatan);
+  const [adaPerubahan, setAdaPerubahan] = useState(false); // Track perubahan
   const [info, setInfo] = useState({
     nuptk: guru?.nuptk || "",
     nama: guru?.nama || "",
@@ -1718,31 +1829,51 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
         checkPerluB: pc.kesimpulanB === "perlu",
         catatanSingkat: pc.catatanSingkat
       }));
+      setAdaPerubahan(true);
     }
   };
 
   const handleSimpan = () => {
     if (!info.nama.trim()) return alert("Nama guru wajib diisi!");
     if (!selesai) return alert("Harap isi semua 5 aspek terlebih dahulu!");
-    onSimpan({ ...info, skor, catatanKhusus, total, persen: parseFloat(((total / MAKS_B) * 100).toFixed(2)), template: "B" });
+    
+    // Pop-up konfirmasi di tengah layar
+    const konfirmasi = window.confirm(
+      `Simpan data supervisi?\n\n` +
+      `Guru: ${info.nama}\n` +
+      `Total Skor: ${total}/${MAKS_B}\n` +
+      `Persentase: ${((total / MAKS_B) * 100).toFixed(2)}%\n` +
+      `Predikat: ${pred.label}`
+    );
+    
+    if (konfirmasi) {
+      onSimpan({ ...info, skor, catatanKhusus, total, persen: parseFloat(((total / MAKS_B) * 100).toFixed(2)), template: "B" });
+      setAdaPerubahan(false);
+    }
   };
 
   return (
     <Modal onClose={onClose}>
-      <HeaderModal badge="Template B" subjudul="15 Indikator · Maks 60" judul="Instrumen Supervisi Guru" onClose={onClose} warna="hijau" />
+      <HeaderModal 
+        badge="Template B" 
+        subjudul={adaPerubahan ? "⚠️ Ada perubahan belum disimpan" : "15 Indikator · Maks 60"} 
+        judul="Instrumen Supervisi Guru" 
+        onClose={onClose} 
+        warna="hijau" 
+      />
       <div style={{ padding: "16px 22px", display: "flex", flexDirection: "column", gap: "14px", maxHeight: "78vh", overflowY: "auto" }}>
 
         {/* A. Identitas */}
         <SectionCard judul="A. Identitas" warna="hijau">
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "9px" }}>
-            <InputField label="NUPTK" value={info.nuptk} onChange={v => setInfo({ ...info, nuptk: v })} placeholder="Nomor Unik Pendidik" />
-            <InputField label="Nama Guru" value={info.nama} onChange={v => setInfo({ ...info, nama: v })} placeholder="Nama lengkap + gelar" />
-            <InputField label="Mapel/Jurusan" value={info.mapel} onChange={v => setInfo({ ...info, mapel: v })} placeholder="Nama mapel/jurusan" />
-            <InputField label="Kelas" value={info.kelas} onChange={v => setInfo({ ...info, kelas: v })} placeholder="Mis: X PPLG 1" />
-            <InputField label="Supervisor" value={info.supervisor} onChange={v => setInfo({ ...info, supervisor: v })} placeholder="Nama supervisor" />
+            <InputField label="NUPTK" value={info.nuptk} onChange={v => { setInfo({ ...info, nuptk: v }); setAdaPerubahan(true); }} placeholder="Nomor Unik Pendidik" />
+            <InputField label="Nama Guru" value={info.nama} onChange={v => { setInfo({ ...info, nama: v }); setAdaPerubahan(true); }} placeholder="Nama lengkap + gelar" />
+            <InputField label="Mapel/Jurusan" value={info.mapel} onChange={v => { setInfo({ ...info, mapel: v }); setAdaPerubahan(true); }} placeholder="Nama mapel/jurusan" />
+            <InputField label="Kelas" value={info.kelas} onChange={v => { setInfo({ ...info, kelas: v }); setAdaPerubahan(true); }} placeholder="Mis: X PPLG 1" />
+            <InputField label="Supervisor" value={info.supervisor} onChange={v => { setInfo({ ...info, supervisor: v }); setAdaPerubahan(true); }} placeholder="Nama supervisor" />
             <div>
               <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", display: "block", marginBottom: "4px" }}>Tanggal Supervisi</label>
-              <DatePicker value={info.tanggal} onChange={v => setInfo({ ...info, tanggal: v })} />
+              <DatePicker value={info.tanggal} onChange={v => { setInfo({ ...info, tanggal: v }); setAdaPerubahan(true); }} />
             </div>
           </div>
         </SectionCard>
@@ -1769,6 +1900,7 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
                 skorSaat={skorAspek}
                 onSkorPilih={(indexIndikator, val) => {
                   setSkor({ ...skor, [`${a.id}_${indexIndikator}`]: val });
+                  setAdaPerubahan(true);
                 }}
                 onSetSemua={(val) => {
                   const newSkor = { ...skor };
@@ -1777,9 +1909,13 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
                   });
                   setSkor(newSkor);
                   setCatatanKhusus({ ...catatanKhusus, [a.id]: a.catatan[val] });
+                  setAdaPerubahan(true);
                 }}
                 catatanManual={catatanKhusus[a.id]}
-                onCatatanUbah={teks => setCatatanKhusus({ ...catatanKhusus, [a.id]: teks })}
+                onCatatanUbah={teks => { 
+                  setCatatanKhusus({ ...catatanKhusus, [a.id]: teks });
+                  setAdaPerubahan(true);
+                }}
               />
             );
           })}
@@ -1838,7 +1974,7 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
           {selesai && <BannerPredikat label={pred.label} onIsotomatis={isiOtomatis} />}
           <TextareaField
             value={info.catatanB}
-            onChange={v => setInfo({ ...info, catatanB: v })}
+            onChange={v => { setInfo({ ...info, catatanB: v }); setAdaPerubahan(true); }}
             placeholder="Catatan dan saran supervisi (terisi otomatis dari predikat, atau ketik manual)..."
             baris={3}
           />
@@ -1850,13 +1986,13 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
             {/* Opsi 1: Sudah Memenuhi */}
             <div style={{ border: "1.5px solid #bbf7d0", borderRadius: "10px", padding: "10px", background: info.checkSudahB ? "#f0fdf4" : "#fff" }}>
               <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", marginBottom: "8px" }}>
-                <input type="checkbox" checked={info.checkSudahB} onChange={e => setInfo({ ...info, checkSudahB: e.target.checked })} />
+                <input type="checkbox" checked={info.checkSudahB} onChange={e => { setInfo({ ...info, checkSudahB: e.target.checked }); setAdaPerubahan(true); }} />
                 <span style={{ fontSize: "12.5px", fontWeight: 700, color: "#166534" }}>☑ Guru sudah memenuhi standar supervisi</span>
               </label>
               <TextareaField
                 label="Catatan (Sudah Memenuhi)"
                 value={info.catatanSudahB}
-                onChange={v => setInfo({ ...info, catatanSudahB: v })}
+                onChange={v => { setInfo({ ...info, catatanSudahB: v }); setAdaPerubahan(true); }}
                 placeholder="Tulis catatan jika guru sudah memenuhi standar..."
                 baris={2}
               />
@@ -1865,13 +2001,13 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
             {/* Opsi 2: Perlu Pembinaan */}
             <div style={{ border: "1.5px solid #fecdd3", borderRadius: "10px", padding: "10px", background: info.checkPerluB ? "#fff1f2" : "#fff" }}>
               <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", marginBottom: "8px" }}>
-                <input type="checkbox" checked={info.checkPerluB} onChange={e => setInfo({ ...info, checkPerluB: e.target.checked })} />
+                <input type="checkbox" checked={info.checkPerluB} onChange={e => { setInfo({ ...info, checkPerluB: e.target.checked }); setAdaPerubahan(true); }} />
                 <span style={{ fontSize: "12.5px", fontWeight: 700, color: "#991b1b" }}>☑ Guru perlu pembinaan pada aspek</span>
               </label>
               <TextareaField
                 label="Catatan (Perlu Pembinaan)"
                 value={info.catatanPerluB}
-                onChange={v => setInfo({ ...info, catatanPerluB: v })}
+                onChange={v => { setInfo({ ...info, catatanPerluB: v }); setAdaPerubahan(true); }}
                 placeholder="Tulis catatan/aspek apa yang perlu dibina..."
                 baris={2}
               />
@@ -1881,7 +2017,7 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
 
         {/* Catatan Singkat Yayasan */}
         <SectionCard judul="Catatan Singkat untuk Rekap" warna="kuning">
-          <TextareaField value={info.catatanSingkat} onChange={v => setInfo({ ...info, catatanSingkat: v })} placeholder="Terisi otomatis dari predikat, atau ketik manual..." baris={2} />
+          <TextareaField value={info.catatanSingkat} onChange={v => { setInfo({ ...info, catatanSingkat: v }); setAdaPerubahan(true); }} placeholder="Terisi otomatis dari predikat, atau ketik manual..." baris={2} />
         </SectionCard>
 
         {/* Footer */}
