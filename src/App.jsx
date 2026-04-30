@@ -3173,28 +3173,49 @@ export default function App({ sesi, onLogout }) {
 
   // ── Sinkronkan Catatan Template B ke Semua Guru ──
   const sinkronkanCatatanB = async () => {
-    if (!confirm("Sinkronkan catatan Template B terbaru ke semua guru?\n\nIni akan mengupdate catatan default untuk guru yang belum punya catatan custom.")) return;
+    if (!confirm("Sinkronkan catatan Template B terbaru ke semua guru?\n\nIni akan mengupdate catatan untuk semua guru Template B berdasarkan skor yang mereka pilih.")) return;
     
     let jumlahUpdate = 0;
     const guruBaru = daftarGuru.map(guru => {
       // Hanya update guru Template B
       if (guru.template !== "B") return guru;
       
-      // Update catatan khusus per aspek jika masih pakai default lama
-      const catatanKhususBaru = { ...guru.catatanKhusus };
+      // Update catatan per aspek berdasarkan skor yang dipilih
+      const catatanKhususBaru = { ...guru.catatanKhusus } || {};
       let adaPerubahan = false;
       
       aspekB.forEach(aspek => {
-        // Cek apakah guru punya catatan custom untuk aspek ini
-        if (!guru.catatanKhusus || guru.catatanKhusus[aspek.id] === undefined) {
-          // Belum ada catatan custom, pakai catatan default terbaru
-          // Ambil catatan berdasarkan skor yang dipilih
-          if (guru.skor && guru.skor[aspek.id]) {
-            const skorAspek = guru.skor[aspek.id];
-            if (aspek.catatan[skorAspek]) {
-              catatanKhususBaru[aspek.id] = aspek.catatan[skorAspek];
-              adaPerubahan = true;
-            }
+        // Cari skor total aspek ini dari skor per indikator
+        let totalSkorAspek = 0;
+        let jumlahIndikator = aspek.indikator.length;
+        
+        aspek.indikator.forEach((_, idx) => {
+          let val = guru.skor?.[`${aspek.id}_${idx}`];
+          if (val !== undefined && val !== "") {
+            let num = parseFloat(String(val).replace(",", "."));
+            if (!isNaN(num)) totalSkorAspek += num;
+          }
+        });
+        
+        // Tentukan kategori skor (1-4) berdasarkan persentase
+        let skorMaksAspek = jumlahIndikator * 4;
+        let persenAspek = (totalSkorAspek / skorMaksAspek) * 100;
+        let kategoriSkor = 1; // default Kurang
+        
+        if (persenAspek >= 90) kategoriSkor = 4; // Sangat Baik
+        else if (persenAspek >= 75) kategoriSkor = 3; // Baik
+        else if (persenAspek >= 60) kategoriSkor = 2; // Cukup
+        else kategoriSkor = 1; // Kurang
+        
+        // Update catatan berdasarkan kategori skor
+        if (aspek.catatan[kategoriSkor]) {
+          const catatanBaru = aspek.catatan[kategoriSkor];
+          const catatanLama = catatanKhususBaru[aspek.id];
+          
+          // Update jika berbeda
+          if (catatanLama !== catatanBaru) {
+            catatanKhususBaru[aspek.id] = catatanBaru;
+            adaPerubahan = true;
           }
         }
       });
