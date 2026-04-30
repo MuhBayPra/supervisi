@@ -1226,7 +1226,7 @@ function TombolSkor({ nilai, aktif, onClick }) {
 
 
 // ── Komponen: Kartu Indikator (dipakai di Form A) ──
-function KartuIndikator({ indikator, skorSaat, onSkorPilih, catatanManual, onCatatanUbah }) {
+function KartuIndikator({ indikator, skorSaat, onSkorPilih, catatanManual, onCatatanUbah, baruDiubah }) {
   const s = skorSaat;
   const teksCatatan = catatanManual !== undefined ? catatanManual : (s > 0 ? indikator.catatan[s] : "");
   
@@ -1259,8 +1259,8 @@ function KartuIndikator({ indikator, skorSaat, onSkorPilih, catatanManual, onCat
         </div>
         <div style={{ display: "flex", gap: "4px", flexShrink: 0, alignItems: "center", flexDirection: "column" }}>
           <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-            {/* Status poin yang dipilih */}
-            {s > 0 && (
+            {/* Status poin yang dipilih - HANYA TAMPIL JIKA BARU DIUBAH */}
+            {s > 0 && baruDiubah && (
               <div style={{ 
                 fontSize: "14px", 
                 fontWeight: 700, 
@@ -1279,8 +1279,8 @@ function KartuIndikator({ indikator, skorSaat, onSkorPilih, catatanManual, onCat
               <TombolSkor key={n} nilai={n} aktif={s === n} onClick={() => onSkorPilih(n)} />
             ))}
           </div>
-          {/* Konfirmasi di bawah tombol */}
-          {s > 0 && (
+          {/* Konfirmasi di bawah tombol - HANYA TAMPIL JIKA BARU DIUBAH */}
+          {s > 0 && baruDiubah && (
             <div style={{ 
               fontSize: "11px", 
               fontWeight: 600, 
@@ -1325,7 +1325,7 @@ function KartuIndikator({ indikator, skorSaat, onSkorPilih, catatanManual, onCat
 
 
 // ── Komponen: Kartu Aspek (dipakai di Form B) ──
-function KartuAspek({ aspek, skorSaat, onSkorPilih, catatanManual, onCatatanUbah, onSetSemua }) {
+function KartuAspek({ aspek, skorSaat, onSkorPilih, catatanManual, onCatatanUbah, onSetSemua, setSemuaDiklik, aspekId, skorBerubah }) {
   // skorSaat here is an object mapping indicator index to its string value
   // let's calculate if any indicator is filled
   const anyFilled = Object.values(skorSaat || {}).some(v => v !== "" && v !== undefined);
@@ -1354,22 +1354,39 @@ function KartuAspek({ aspek, skorSaat, onSkorPilih, catatanManual, onCatatanUbah
         {onSetSemua && (
           <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
             <span style={{ fontSize: "10.5px", fontWeight: 600, color: "#64748b", marginRight: "2px" }}>Set semua:</span>
-            {[1, 2, 3, 4].map(n => (
-              <button
-                key={n}
-                onClick={(e) => {
-                  e.preventDefault();
-                  onSetSemua(n);
-                }}
-                style={{
-                  background: "#e2e8f0", border: "none", borderRadius: "5px", width: "22px", height: "22px",
-                  fontSize: "11px", fontWeight: "bold", color: "#0f172a", cursor: "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center"
-                }}
-              >
-                {n}
-              </button>
-            ))}
+            {[1, 2, 3, 4].map(n => {
+              // Cek apakah tombol INI yang diklik untuk aspek INI
+              const kunciTombol = `${aspekId}_${n}`;
+              const isDiklik = setSemuaDiklik && setSemuaDiklik[kunciTombol] === true;
+              return (
+                <button
+                  key={n}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onSetSemua(n);
+                  }}
+                  style={{
+                    background: isDiklik ? WARNA_SKOR[n] : "#e2e8f0", 
+                    border: isDiklik ? `2px solid ${WARNA_SKOR[n]}` : "1px solid #cbd5e1", 
+                    borderRadius: "5px", 
+                    width: "22px", 
+                    height: "22px",
+                    fontSize: "11px", 
+                    fontWeight: "bold", 
+                    color: isDiklik ? "#fff" : "#64748b", 
+                    cursor: "pointer",
+                    display: "flex", 
+                    alignItems: "center", 
+                    justifyContent: "center",
+                    transform: isDiklik ? "scale(1.1)" : "scale(1)",
+                    transition: "all 0.2s",
+                    boxShadow: isDiklik ? `0 2px 8px ${WARNA_SKOR[n]}50` : "none"
+                  }}
+                >
+                  {n}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -1379,14 +1396,15 @@ function KartuAspek({ aspek, skorSaat, onSkorPilih, catatanManual, onCatatanUbah
         {aspek.indikator.map((ind, i) => {
           const nilaiSkor = skorSaat[i] !== undefined ? skorSaat[i] : "";
           const adaNilai = nilaiSkor !== "" && nilaiSkor !== undefined;
+          const baruDiubah = skorBerubah && skorBerubah[`${aspekId}_${i}`]; // Cek apakah baru diubah
           
           return (
             <div key={i} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", background: "#fff", padding: "6px 10px", border: "1px solid #cbd5e1", borderRadius: "6px" }}>
                 <span style={{ fontSize: "12px", color: "#334155", flex: 1 }}>• {ind}</span>
                 
-                {/* Status poin yang diketik */}
-                {adaNilai && (
+                {/* Status poin yang diketik - HANYA TAMPIL JIKA BARU DIUBAH */}
+                {adaNilai && baruDiubah && (
                   <div style={{ 
                     fontSize: "13px", 
                     fontWeight: 700, 
@@ -1395,7 +1413,8 @@ function KartuAspek({ aspek, skorSaat, onSkorPilih, catatanManual, onCatatanUbah
                     padding: "3px 8px", 
                     borderRadius: "5px",
                     border: "1.5px solid #bbf7d0",
-                    marginRight: "6px"
+                    marginRight: "6px",
+                    animation: "fadeIn 0.3s"
                   }}>
                     Poin: {nilaiSkor}
                   </div>
@@ -1425,8 +1444,8 @@ function KartuAspek({ aspek, skorSaat, onSkorPilih, catatanManual, onCatatanUbah
                 />
               </div>
               
-              {/* Konfirmasi di bawah input */}
-              {adaNilai && (
+              {/* Konfirmasi di bawah input - HANYA TAMPIL JIKA BARU DIUBAH */}
+              {adaNilai && baruDiubah && (
                 <div style={{ 
                   fontSize: "11px", 
                   fontWeight: 600, 
@@ -1614,6 +1633,7 @@ function FormA({ guru, indikator, onSimpan, onClose, dataPredikat }) {
   const [skor, setSkor] = useState(initSkor);
   const [catatanKhusus, setCatatanKhusus] = useState(initCatatan);
   const [adaPerubahan, setAdaPerubahan] = useState(false); // Track perubahan
+  const [skorBerubah, setSkorBerubah] = useState({}); // Track skor yang baru diubah
   const [info, setInfo] = useState({
     nuptk: guru?.nuptk || "",
     nama: guru?.nama || "",
@@ -1732,12 +1752,14 @@ function FormA({ guru, indikator, onSimpan, onClose, dataPredikat }) {
                     setSkor({ ...skor, [ind.id]: n });
                     setCatatanKhusus({ ...catatanKhusus, [ind.id]: ind.catatan[n] });
                     setAdaPerubahan(true);
+                    setSkorBerubah({ ...skorBerubah, [ind.id]: true }); // Tandai skor ini baru diubah
                   }}
                   catatanManual={catatanKhusus[ind.id]}
                   onCatatanUbah={teks => { 
                     setCatatanKhusus({ ...catatanKhusus, [ind.id]: teks });
                     setAdaPerubahan(true);
                   }}
+                  baruDiubah={skorBerubah[ind.id]} // Pass flag baru diubah
                 />
               ))}
             </div>
@@ -1793,6 +1815,8 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
   const [skor, setSkor] = useState(initSkor);
   const [catatanKhusus, setCatatanKhusus] = useState(initCatatan);
   const [adaPerubahan, setAdaPerubahan] = useState(false); // Track perubahan
+  const [setSemuaDiklik, setSetSemuaDiklik] = useState({}); // Track tombol Set semua yang diklik
+  const [skorBerubah, setSkorBerubah] = useState({}); // Track skor yang baru diubah
   const [info, setInfo] = useState({
     nuptk: guru?.nuptk || "",
     nama: guru?.nama || "",
@@ -1901,16 +1925,33 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
                 onSkorPilih={(indexIndikator, val) => {
                   setSkor({ ...skor, [`${a.id}_${indexIndikator}`]: val });
                   setAdaPerubahan(true);
+                  setSkorBerubah({ ...skorBerubah, [`${a.id}_${indexIndikator}`]: true }); // Tandai skor ini baru diubah
                 }}
                 onSetSemua={(val) => {
                   const newSkor = { ...skor };
+                  const newSkorBerubah = { ...skorBerubah };
                   a.indikator.forEach((ind, i) => {
                     newSkor[`${a.id}_${i}`] = String(val);
+                    newSkorBerubah[`${a.id}_${i}`] = true; // Tandai semua skor baru diubah
                   });
                   setSkor(newSkor);
+                  setSkorBerubah(newSkorBerubah);
                   setCatatanKhusus({ ...catatanKhusus, [a.id]: a.catatan[val] });
                   setAdaPerubahan(true);
+                  
+                  // Reset semua tombol aspek ini, lalu set hanya tombol yang diklik
+                  const newSetSemuaDiklik = { ...setSemuaDiklik };
+                  // Hapus tombol lain di aspek yang sama
+                  [1, 2, 3, 4].forEach(n => {
+                    delete newSetSemuaDiklik[`${a.id}_${n}`];
+                  });
+                  // Set hanya tombol yang baru diklik
+                  newSetSemuaDiklik[`${a.id}_${val}`] = true;
+                  setSetSemuaDiklik(newSetSemuaDiklik);
                 }}
+                setSemuaDiklik={setSemuaDiklik}
+                aspekId={a.id}
+                skorBerubah={skorBerubah} // Pass tracking skor berubah
                 catatanManual={catatanKhusus[a.id]}
                 onCatatanUbah={teks => { 
                   setCatatanKhusus({ ...catatanKhusus, [a.id]: teks });
