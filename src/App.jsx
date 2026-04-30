@@ -59,6 +59,8 @@ const DEFAULT_PENGATURAN_PDF = {
   // ── A. Umum: dipakai di semua PDF ──
   umum: {
     logo: "/logo.png",
+    logoWidth: 60,  // Lebar logo dalam pixel
+    logoHeight: 60, // Tinggi logo dalam pixel
     namaSekolah: "SMKS Bhakti Insani Bogor",      // nama di footer
     namaSekolahUP: "SMKS BHAKTI INSANI BOGOR",      // nama kapital di judul
     namaSekolahTTD: "SMKS Bhakti Insani Bogor",     // nama di area TTD template B
@@ -550,15 +552,15 @@ function getPrediakatGuru(guru) {
 // ── Membuat teks kesimpulan kepala sekolah otomatis ──
 function buatKesimpulanKepsek(rataRata, hitungPredikat) {
   if (rataRata >= 91) {
-    return `Secara umum hasil supervisi sangat memuaskan. Sebanyak ${hitungPredikat["Sangat Baik"]} guru meraih predikat Sangat Baik. Seluruh guru menunjukkan kompetensi tinggi dalam pembelajaran. Sekolah akan terus mendukung pengembangan profesional guru agar kualitas pembelajaran semakin meningkat.`;
+    return `Secara umum, hasil supervisi sangat memuaskan. Sebanyak ${hitungPredikat["Sangat Baik"]} guru meraih predikat Sangat Baik. Seluruh guru menunjukkan kompetensi yang tinggi dalam pembelajaran. Sekolah akan terus mendukung pengembangan profesional guru agar kualitas pembelajaran makin meningkat.`;
   }
   if (rataRata >= 81) {
-    return `Secara umum, hasil supervisi menunjukkan bahwa sebagian besar guru telah melaksanakan pembelajaran dengan baik, administrasi cukup lengkap, serta memiliki komitmen yang tinggi terhadap sekolah. Area yang masih perlu ditingkatkan meliputi diferensiasi pembelajaran, penggunaan refleksi siswa, variasi metode, dan penguatan rubrik penilaian.\n\nKe depan, sekolah akan melakukan tindak lanjut berupa pelatihan internal, coaching per bidang studi, supervisi lanjutan, dan pendampingan administrasi pembelajaran agar kualitas guru terus meningkat secara berkelanjutan.`;
+    return `Secara umum, hasil supervisi menunjukkan bahwa guru telah melaksanakan pembelajaran dengan baik. Namun, masih diperlukan peningkatan pada beberapa aspek pembelajaran. Sekolah akan melakukan pembimbingan, pendampingan administrasi, dan supervisi lanjutan untuk membantu guru mencapai standar yang diharapkan.`;
   }
   if (rataRata >= 71) {
-    return `Secara umum, hasil supervisi menunjukkan bahwa guru masih memerlukan peningkatan di berbagai aspek pembelajaran. Sekolah akan melakukan coaching intensif, pendampingan administrasi, dan supervisi lanjutan untuk membantu guru mencapai standar yang diharapkan.`;
+    return `Secara umum, hasil supervisi menunjukkan bahwa guru masih memerlukan peningkatan di berbagai aspek pembelajaran. Sekolah akan melakukan pembimbingan intensif, pendampingan administrasi, dan supervisi lanjutan untuk membantu guru mencapai standar yang diharapkan.`;
   }
-  return `Hasil supervisi menunjukkan bahwa sejumlah guru masih memerlukan pembinaan khusus. Kepala sekolah bersama waka kurikulum akan melakukan pendampingan intensif, monitoring mingguan, dan supervisi ulang untuk memastikan peningkatan kualitas pembelajaran secara menyeluruh.`;
+  return `Hasil supervisi menunjukkan bahwa sejumlah guru masih memerlukan pembinaan khusus. Kepala sekolah bersama wakil kepala sekolah bidang kurikulum akan melakukan pendampingan intensif, pemantauan mingguan, dan supervisi ulang untuk memastikan peningkatan kualitas pembelajaran secara menyeluruh.`;
 }
 
 
@@ -604,9 +606,13 @@ const generateDocx = (templateUrl, data, outputName, returnBlob = false) => {
     // sebagai hasil resolve internal {rId, sizePixel} dan langsung crash.
     // Solusi: simpan logo sebagai string, konversi di dalam getImage.
 
-    // Simpan referensi logo asli, lalu hapus dari data agar bisa dikontrol
+    // Simpan referensi logo asli dan ukuran, lalu hapus dari data agar bisa dikontrol
     const logoRef = data.logo || null;
+    const logoWidth = data.logoWidth || 60;
+    const logoHeight = data.logoHeight || 60;
     delete data.logo; // Hapus dulu, akan di-set ulang sebagai string di bawah
+    delete data.logoWidth;
+    delete data.logoHeight;
 
     // Siapkan buffer logo untuk dipakai di getImage
     let logoBuffer = null;
@@ -644,7 +650,8 @@ const generateDocx = (templateUrl, data, outputName, returnBlob = false) => {
         return logoBuffer || new Uint8Array([]);
       },
       getSize: () => {
-        return [80, 80];
+        // Gunakan ukuran dari pengaturan user
+        return [logoWidth, logoHeight];
       }
     };
 
@@ -707,36 +714,46 @@ async function cetakPDF_A(guru, indikator, ps, returnBlob = false) {
 
 // ── Cetak Template B ──
 async function cetakPDF_B(guru, aspekB, ps, returnBlob = false) {
-  const dataAspek = aspekB.map((a, i) => ({
-    id: i + 1,
-    nama_aspek: a.aspek,
-    indikator: a.indikator ? a.indikator.map((txt, idx) => `${idx + 1}. ${txt}`).join("\n") : "", // Single newline - rapat
-    skor: (function() {
-      let sum = 0;
-      if (a.indikator) {
-        a.indikator.forEach((_, idx) => {
-          let val = guru.skor[`${a.id}_${idx}`];
-          if (val === undefined || val === "") val = guru.skor[a.id] || 0;
-          let num = parseFloat(String(val).replace(",", "."));
-          if (!isNaN(num)) sum += num;
-        });
-      }
-      return Math.round(sum * 10) / 10;
-    })(),
-    skor_per_indikator: (function() {
-      // Skor per indikator dengan spasi ekstra agar sejajar dengan indikator yang rapat
-      if (a.indikator) {
-        return a.indikator.map((txt, idx) => {
-          let val = guru.skor[`${a.id}_${idx}`];
-          if (val === undefined || val === "") val = guru.skor[a.id] || "-";
-          return String(val).replace(".", ",");
-        }).join("\n\n"); // Double newline untuk jarak yang sesuai
-      }
-      return "-";
-    })(),
-    skor_maks_aspek: a.indikator ? a.indikator.length * 4 : 4, // Jumlah indikator × 4
-    catatan: guru.catatanKhusus?.[a.id] !== undefined ? guru.catatanKhusus[a.id] : (guru.skor[a.id] ? a.catatan[guru.skor[a.id]] : "")
-  }));
+  // Helper untuk ambil skor per indikator
+  const getSkor = (aspekId, indikatorIdx) => {
+    let val = guru.skor[`${aspekId}_${indikatorIdx}`];
+    if (val === undefined || val === "") return "-";
+    return String(val).replace(".", ",");
+  };
+
+  // Helper untuk ambil catatan per aspek
+  const getCatatanAspek = (aspekId) => {
+    // Catatan custom per aspek
+    if (guru.catatanKhusus?.[aspekId] !== undefined) {
+      return guru.catatanKhusus[aspekId];
+    }
+    // Default catatan dari data aspek (jika ada)
+    const aspek = aspekB.find(a => a.id === aspekId);
+    if (aspek && guru.skor[aspekId]) {
+      return aspek.catatan[guru.skor[aspekId]] || "";
+    }
+    return "";
+  };
+
+  // Data aspek untuk loop (untuk tabel Rekap Nilai Supervisi)
+  const dataAspek = aspekB.map((a, i) => {
+    // Hitung total skor aspek
+    let totalSkor = 0;
+    if (a.indikator) {
+      a.indikator.forEach((_, idx) => {
+        let val = guru.skor[`${a.id}_${idx}`];
+        if (val === undefined || val === "") val = 0;
+        let num = parseFloat(String(val).replace(",", "."));
+        if (!isNaN(num)) totalSkor += num;
+      });
+    }
+    
+    return {
+      nama_aspek: a.aspek,
+      skor_maks_aspek: a.indikator ? a.indikator.length * 4 : 4,
+      skor: totalSkor
+    };
+  });
 
   const pred = getPrediakatGuru(guru).label;
   const persen = parseFloat(((guru.total / 60) * 100).toFixed(2));
@@ -757,10 +774,61 @@ async function cetakPDF_B(guru, aspekB, ps, returnBlob = false) {
     catatanB: guru.catatanB || "-",
     catatan_sudahB: guru.catatanSudahB || "",
     catatan_perluB: guru.catatanPerluB || "",
-    // Menggunakan simbol centang standar yang lebih aman
     kesimpulan_sudahB: (guru.checkSudahB ? "☑ " : "[] ") + "Guru sudah memenuhi standar supervisi",
     kesimpulan_perluB: (guru.checkPerluB ? "☑ " : "[] ") + "Guru perlu pembinaan pada aspek",
-    aspek: dataAspek // skor_maks_aspek sudah dihitung di dataAspek
+    
+    // Data untuk loop (tabel Rekap Nilai Supervisi)
+    aspek: dataAspek,
+    
+    // Aspek 1: Perencanaan Pembelajaran (3 indikator)
+    aspek1_nama: aspekB[0].aspek,
+    ind1_1: aspekB[0].indikator[0],
+    skor1_1: getSkor(1, 0),
+    ind1_2: aspekB[0].indikator[1],
+    skor1_2: getSkor(1, 1),
+    ind1_3: aspekB[0].indikator[2],
+    skor1_3: getSkor(1, 2),
+    catatan1: getCatatanAspek(1),
+    
+    // Aspek 2: Pelaksanaan Pembelajaran (3 indikator)
+    aspek2_nama: aspekB[1].aspek,
+    ind2_1: aspekB[1].indikator[0],
+    skor2_1: getSkor(2, 0),
+    ind2_2: aspekB[1].indikator[1],
+    skor2_2: getSkor(2, 1),
+    ind2_3: aspekB[1].indikator[2],
+    skor2_3: getSkor(2, 2),
+    catatan2: getCatatanAspek(2),
+    
+    // Aspek 3: Pengelolaan Kelas (3 indikator)
+    aspek3_nama: aspekB[2].aspek,
+    ind3_1: aspekB[2].indikator[0],
+    skor3_1: getSkor(3, 0),
+    ind3_2: aspekB[2].indikator[1],
+    skor3_2: getSkor(3, 1),
+    ind3_3: aspekB[2].indikator[2],
+    skor3_3: getSkor(3, 2),
+    catatan3: getCatatanAspek(3),
+    
+    // Aspek 4: Penilaian dan Tindak Lanjut (2 indikator)
+    aspek4_nama: aspekB[3].aspek,
+    ind4_1: aspekB[3].indikator[0],
+    skor4_1: getSkor(4, 0),
+    ind4_2: aspekB[3].indikator[1],
+    skor4_2: getSkor(4, 1),
+    catatan4: getCatatanAspek(4),
+    
+    // Aspek 5: Sikap dan Profesionalisme (4 indikator)
+    aspek5_nama: aspekB[4].aspek,
+    ind5_1: aspekB[4].indikator[0],
+    skor5_1: getSkor(5, 0),
+    ind5_2: aspekB[4].indikator[1],
+    skor5_2: getSkor(5, 1),
+    ind5_3: aspekB[4].indikator[2],
+    skor5_3: getSkor(5, 2),
+    ind5_4: aspekB[4].indikator[3],
+    skor5_4: getSkor(5, 3),
+    catatan5: getCatatanAspek(5),
   }, `InstrumenSupervisiGuru_${guru.nama.replace(/\s+/g, "_")}.docx`, returnBlob);
 }
 
@@ -1835,7 +1903,7 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
 // ============================================================
 
 // ── Modal: Rekap Yayasan (2 PDF terpisah: A & B) ──
-function ModalRekapYayasan({ semuaGuru, dataPredikat, pengaturanPDF, onClose }) {
+function ModalRekapYayasan({ semuaGuru, dataPredikat, pengaturanPDF, onClose, onSimpanCatatan }) {
   // State untuk toggle mode rekap
   const [modeGabung, setModeGabung] = useState(true); // true = gabung (guru unik), false = lengkap (semua supervisi)
   
@@ -2080,7 +2148,35 @@ function ModalRekapYayasan({ semuaGuru, dataPredikat, pengaturanPDF, onClose }) 
           </button>
         </div>
 
-        <button onClick={onClose} style={{ ...GAYA.btnSekunder, alignSelf: "flex-end" }}>Tutup</button>
+        {/* Info dan tombol aksi */}
+        <div style={{ background: "#fef3c7", border: "1.5px solid #fbbf24", borderRadius: "8px", padding: "10px 14px", fontSize: "11px", color: "#78350f" }}>
+          💡 <strong>Catatan:</strong> Perubahan catatan singkat dan kesimpulan hanya akan tersimpan jika Anda klik tombol <strong>"Simpan Perubahan Catatan"</strong> di bawah. Jika langsung unduh Word tanpa simpan, catatan hanya akan muncul di laporan Word tersebut.
+        </div>
+
+        <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", paddingTop: "10px", borderTop: "1px solid #e2e8f0" }}>
+          <button 
+            onClick={() => {
+              // Simpan catatan singkat ke data guru
+              if (onSimpanCatatan) {
+                onSimpanCatatan(guruA, catatanA, guruB, catatanB);
+              }
+              alert("✅ Catatan berhasil disimpan!");
+            }}
+            style={{ 
+              background: "#16a34a", 
+              color: "#fff", 
+              border: "none", 
+              borderRadius: "8px", 
+              padding: "8px 16px", 
+              cursor: "pointer", 
+              fontWeight: 700, 
+              fontSize: "12px" 
+            }}
+          >
+            💾 Simpan Perubahan Catatan
+          </button>
+          <button onClick={onClose} style={{ ...GAYA.btnSekunder }}>Tutup</button>
+        </div>
       </div>
     </Modal>
   );
@@ -2662,7 +2758,7 @@ function ModalPengaturanPDF({ pengaturan, onSimpan, onClose }) {
             <div style={gridDua}>
               <div>
                 <label style={{ fontSize: "11px", fontWeight: 700, color: "#475569", display: "block", marginBottom: "6px" }}>Logo Sekolah</label>
-                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "8px" }}>
                   {data.umum.logo && <img src={data.umum.logo} style={{ height: "40px", width: "40px", borderRadius: "6px", border: "1px solid #e2e8f0", objectFit: "contain" }} />}
                   <input
                     type="file"
@@ -2677,6 +2773,33 @@ function ModalPengaturanPDF({ pengaturan, onSimpan, onClose }) {
                     }}
                     style={{ fontSize: "11px" }}
                   />
+                </div>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "3px" }}>Lebar (px)</label>
+                    <input
+                      type="number"
+                      value={data.umum.logoWidth || 60}
+                      onChange={e => set("umum", "logoWidth", parseInt(e.target.value) || 60)}
+                      min="20"
+                      max="200"
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1.5px solid #e2e8f0", fontSize: "11px" }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "3px" }}>Tinggi (px)</label>
+                    <input
+                      type="number"
+                      value={data.umum.logoHeight || 60}
+                      onChange={e => set("umum", "logoHeight", parseInt(e.target.value) || 60)}
+                      min="20"
+                      max="200"
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1.5px solid #e2e8f0", fontSize: "11px" }}
+                    />
+                  </div>
+                </div>
+                <div style={{ fontSize: "9px", color: "#94a3b8", marginTop: "4px" }}>
+                  💡 Ukuran default: 60×60 px. Range: 20-200 px
                 </div>
               </div>
               <InputField label="Nama Sekolah (footer)" value={data.umum.namaSekolah} onChange={v => set("umum", "namaSekolah", v)} placeholder="SMKS Bhakti Insani Bogor" />
@@ -3048,6 +3171,46 @@ export default function App({ sesi, onLogout }) {
   const simpanPredikat = async (d) => { setPredikat(d); try { await window.storage.set("predikat-cat", JSON.stringify(d)); } catch { } };
   const simpanPengaturanPDF = async (d) => { setPengaturanPDF(d); try { await window.storage.set("pengaturan-pdf", JSON.stringify(d)); } catch { } };
 
+  // ── Sinkronkan Catatan Template B ke Semua Guru ──
+  const sinkronkanCatatanB = async () => {
+    if (!confirm("Sinkronkan catatan Template B terbaru ke semua guru?\n\nIni akan mengupdate catatan default untuk guru yang belum punya catatan custom.")) return;
+    
+    let jumlahUpdate = 0;
+    const guruBaru = daftarGuru.map(guru => {
+      // Hanya update guru Template B
+      if (guru.template !== "B") return guru;
+      
+      // Update catatan khusus per aspek jika masih pakai default lama
+      const catatanKhususBaru = { ...guru.catatanKhusus };
+      let adaPerubahan = false;
+      
+      aspekB.forEach(aspek => {
+        // Cek apakah guru punya catatan custom untuk aspek ini
+        if (!guru.catatanKhusus || guru.catatanKhusus[aspek.id] === undefined) {
+          // Belum ada catatan custom, pakai catatan default terbaru
+          // Ambil catatan berdasarkan skor yang dipilih
+          if (guru.skor && guru.skor[aspek.id]) {
+            const skorAspek = guru.skor[aspek.id];
+            if (aspek.catatan[skorAspek]) {
+              catatanKhususBaru[aspek.id] = aspek.catatan[skorAspek];
+              adaPerubahan = true;
+            }
+          }
+        }
+      });
+      
+      if (adaPerubahan) {
+        jumlahUpdate++;
+        return { ...guru, catatanKhusus: catatanKhususBaru };
+      }
+      
+      return guru;
+    });
+    
+    await simpanGuru(guruBaru);
+    alert(`✅ Berhasil sinkronkan catatan ke ${jumlahUpdate} guru Template B!`);
+  };
+
   // ── Tampilkan notifikasi tersimpan ──
   const tampilNotif = () => {
     setNotifSimpan(true);
@@ -3122,6 +3285,66 @@ export default function App({ sesi, onLogout }) {
     await simpanGuru(listBaru);
   };
 
+  // ── Simpan catatan rekap ke data guru ──
+  const simpanCatatanRekap = async (guruA, catatanA, guruB, catatanB) => {
+    // Ambil data terbaru dari server
+    let listTerbaru = daftarGuru;
+    try {
+      const res = await window.storage.get("guru-list");
+      if (res && res.value) listTerbaru = JSON.parse(res.value);
+    } catch (e) {}
+
+    // Update catatan untuk guru Template A
+    guruA.forEach((guru, idx) => {
+      // Jika mode gabung, update semua supervisi guru tersebut
+      if (guru.supervisi && guru.supervisi.length > 0) {
+        guru.supervisi.forEach(supervisi => {
+          const guruIdx = listTerbaru.findIndex(g => 
+            (g.id && g.id === supervisi.id) || 
+            (g.nama === supervisi.nama && g.tanggal === supervisi.tanggal)
+          );
+          if (guruIdx !== -1) {
+            listTerbaru[guruIdx].catatanSingkat = catatanA[idx];
+          }
+        });
+      } else {
+        // Mode lengkap, update langsung
+        const guruIdx = listTerbaru.findIndex(g => 
+          (g.id && g.id === guru.id) || 
+          (g.nama === guru.nama && g.tanggal === guru.tanggal)
+        );
+        if (guruIdx !== -1) {
+          listTerbaru[guruIdx].catatanSingkat = catatanA[idx];
+        }
+      }
+    });
+
+    // Update catatan untuk guru Template B
+    guruB.forEach((guru, idx) => {
+      if (guru.supervisi && guru.supervisi.length > 0) {
+        guru.supervisi.forEach(supervisi => {
+          const guruIdx = listTerbaru.findIndex(g => 
+            (g.id && g.id === supervisi.id) || 
+            (g.nama === supervisi.nama && g.tanggal === supervisi.tanggal)
+          );
+          if (guruIdx !== -1) {
+            listTerbaru[guruIdx].catatanSingkat = catatanB[idx];
+          }
+        });
+      } else {
+        const guruIdx = listTerbaru.findIndex(g => 
+          (g.id && g.id === guru.id) || 
+          (g.nama === guru.nama && g.tanggal === guru.tanggal)
+        );
+        if (guruIdx !== -1) {
+          listTerbaru[guruIdx].catatanSingkat = catatanB[idx];
+        }
+      }
+    });
+
+    await simpanGuru(listTerbaru);
+  };
+
   // ── Unduh Semua File sebagai ZIP ──
   const unduhSemuaZip = async () => {
     if (guruTerfilter.length === 0) return alert("Tidak ada data guru untuk diunduh!");
@@ -3174,11 +3397,9 @@ export default function App({ sesi, onLogout }) {
 
   // Reset ke halaman 1 jika filter berubah
   useEffect(() => {
-    // skip effect jika sudah di hal 1, hindari lint error cascade render
-    if (halaman !== 1) {
-      setHalaman(1);
-    }
-  }, [cariTeks, filterTmpl, halaman]);
+    setHalaman(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cariTeks, filterTmpl]);
 
   // ── Fungsi helper untuk mengelompokkan guru berdasarkan nama (untuk statistik) ──
   const getGuruUnik = (guruList) => {
@@ -3282,6 +3503,10 @@ export default function App({ sesi, onLogout }) {
               {/* Edit Catatan B */}
               <button onClick={() => setModal("editB")} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: "8px", padding: "8px 12px", cursor: "pointer", fontWeight: 600, fontSize: "12px" }}>
                 ⚙️ Catatan B
+              </button>
+              {/* Sinkronkan Catatan B */}
+              <button onClick={sinkronkanCatatanB} style={{ background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.4)", color: "#fff", borderRadius: "8px", padding: "8px 12px", cursor: "pointer", fontWeight: 600, fontSize: "12px" }}>
+                🔄 Sync Catatan B
               </button>
               {/* Tambah Guru */}
               <button onClick={() => { setIndexGuru(null); setModal("pilih"); }} style={{ background: "#fff", border: "none", color: "#1e3a5f", borderRadius: "8px", padding: "8px 12px", cursor: "pointer", fontWeight: 700, fontSize: "12px" }}>
@@ -3457,14 +3682,22 @@ export default function App({ sesi, onLogout }) {
                 </div>
                 <div style={{ display: "flex", gap: "5px" }}>
                   <button
-                    disabled={halaman === 1}
-                    onClick={() => setHalaman(prev => Math.max(prev - 1, 1))}
+                    onClick={() => {
+                      if (halaman > 1) {
+                        console.log("Sebelumnya clicked, halaman:", halaman);
+                        setHalaman(prev => Math.max(prev - 1, 1));
+                      }
+                    }}
+                    onMouseEnter={e => { if (halaman !== 1) e.currentTarget.style.background = "#f1f5f9"; }}
+                    onMouseLeave={e => { if (halaman !== 1) e.currentTarget.style.background = "#fff"; }}
                     style={{
                       padding: "6px 12px", borderRadius: "8px", border: "1.5px solid #e2e8f0",
                       background: halaman === 1 ? "#f1f5f9" : "#fff",
                       color: halaman === 1 ? "#94a3b8" : "#1e3a5f",
-                      cursor: halaman === 1 ? "default" : "pointer",
-                      fontSize: "12px", fontWeight: 700, transition: "all 0.2s"
+                      cursor: halaman === 1 ? "not-allowed" : "pointer",
+                      fontSize: "12px", fontWeight: 700, transition: "all 0.2s",
+                      opacity: halaman === 1 ? 0.6 : 1,
+                      pointerEvents: "auto"
                     }}
                   >
                     Sebelumnya
@@ -3473,14 +3706,22 @@ export default function App({ sesi, onLogout }) {
                     Halaman {halaman} dari {jumlahHalaman}
                   </div>
                   <button
-                    disabled={halaman >= jumlahHalaman}
-                    onClick={() => setHalaman(prev => Math.min(prev + 1, jumlahHalaman))}
+                    onClick={() => {
+                      if (halaman < jumlahHalaman) {
+                        console.log("Selanjutnya clicked, halaman:", halaman, "jumlahHalaman:", jumlahHalaman);
+                        setHalaman(prev => Math.min(prev + 1, jumlahHalaman));
+                      }
+                    }}
+                    onMouseEnter={e => { if (halaman < jumlahHalaman) e.currentTarget.style.background = "#f1f5f9"; }}
+                    onMouseLeave={e => { if (halaman < jumlahHalaman) e.currentTarget.style.background = "#fff"; }}
                     style={{
                       padding: "6px 12px", borderRadius: "8px", border: "1.5px solid #e2e8f0",
                       background: halaman >= jumlahHalaman ? "#f1f5f9" : "#fff",
                       color: halaman >= jumlahHalaman ? "#94a3b8" : "#1e3a5f",
-                      cursor: halaman >= jumlahHalaman ? "default" : "pointer",
-                      fontSize: "12px", fontWeight: 700, transition: "all 0.2s"
+                      cursor: halaman >= jumlahHalaman ? "not-allowed" : "pointer",
+                      fontSize: "12px", fontWeight: 700, transition: "all 0.2s",
+                      opacity: halaman >= jumlahHalaman ? 0.6 : 1,
+                      pointerEvents: "auto"
                     }}
                   >
                     Selanjutnya
@@ -3558,6 +3799,7 @@ export default function App({ sesi, onLogout }) {
           dataPredikat={predikat}
           pengaturanPDF={pengaturanPDF}
           onClose={() => setModal(null)}
+          onSimpanCatatan={simpanCatatanRekap}
         />
       )}
 
