@@ -3818,10 +3818,10 @@ export default function App({ sesi, onLogout }) {
       let guruUntukZip = [];
       
       if (modeGabung) {
-        // Mode Gabung: Kelompokkan per nama, ambil rata-rata
+        // Mode Gabung: Kelompokkan per nama DAN template, ambil rata-rata
         const grouped = {};
         daftarGuru.forEach((g) => {
-          const namaKey = g.nama.trim().toLowerCase();
+          const namaKey = `${g.nama.trim().toLowerCase()}_${g.template}`; // Gabung nama + template
           if (!grouped[namaKey]) {
             grouped[namaKey] = {
               nama: g.nama,
