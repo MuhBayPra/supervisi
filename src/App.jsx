@@ -3795,19 +3795,26 @@ export default function App({ sesi, onLogout }) {
   const unduhSemuaZip = async () => {
     if (daftarGuru.length === 0) return alert("Tidak ada data guru untuk diunduh!");
     
+    // Hitung jumlah supervisi per template
+    const jumlahA = daftarGuru.filter(g => g.template === "A").length;
+    const jumlahB = daftarGuru.filter(g => g.template === "B").length;
+    
     // Tanyakan mode download
     const pilihan = confirm(
       "📦 Download ZIP - Pilih Mode:\n\n" +
-      "✅ OK = Mode GABUNG (Guru Unik)\n" +
-      "   → 1 file per guru (rata-rata jika ada supervisi ganda)\n" +
+      "✅ OK = Mode LENGKAP (Semua Supervisi Terpisah)\n" +
+      `   → Template A: ${jumlahA} file\n` +
+      `   → Template B: ${jumlahB} file\n` +
+      `   → Total: ${jumlahA + jumlahB} file\n` +
+      "   → Setiap supervisi = 1 file terpisah\n" +
       "   → File diurutkan berdasarkan nomor urut\n\n" +
-      "❌ CANCEL = Mode LENGKAP (Semua Supervisi)\n" +
-      "   → Semua supervisi diunduh terpisah\n" +
-      "   → File diurutkan berdasarkan nomor urut + tanggal\n\n" +
+      "❌ CANCEL = Mode GABUNG (Guru Unik)\n" +
+      "   → 1 file per guru (rata-rata jika supervisi ganda)\n" +
+      "   → File diurutkan berdasarkan nomor urut\n\n" +
       "Pilih mode download:"
     );
     
-    const modeGabung = pilihan; // true = gabung, false = lengkap
+    const modeLengkap = pilihan; // true = lengkap, false = gabung
     
     setLoading(true);
     try {
@@ -3817,7 +3824,10 @@ export default function App({ sesi, onLogout }) {
       
       let guruUntukZip = [];
       
-      if (modeGabung) {
+      if (modeLengkap) {
+        // Mode Lengkap: Semua supervisi terpisah (TIDAK DIGABUNG)
+        guruUntukZip = [...daftarGuru];
+      } else {
         // Mode Gabung: Kelompokkan per nama DAN template, ambil rata-rata
         const grouped = {};
         daftarGuru.forEach((g) => {
@@ -3912,9 +3922,6 @@ export default function App({ sesi, onLogout }) {
             };
           }
         });
-      } else {
-        // Mode Lengkap: Semua supervisi
-        guruUntukZip = [...daftarGuru];
       }
       
       // Urutkan berdasarkan nomor urut
@@ -3952,12 +3959,22 @@ export default function App({ sesi, onLogout }) {
       }
       
       const content = await zip.generateAsync({ type: "blob" });
-      const namaZip = modeGabung 
-        ? `Rekap_Supervisi_Gabung_${guruUntukZip.length}guru.zip`
-        : `Rekap_Supervisi_Lengkap_${guruUntukZip.length}supervisi.zip`;
+      const namaZip = modeLengkap 
+        ? `Rekap_Supervisi_Lengkap_${guruUntukZip.length}file.zip`
+        : `Rekap_Supervisi_Gabung_${guruUntukZip.length}file.zip`;
       saveAs(content, namaZip);
       
-      alert(`✅ Berhasil download ${guruUntukZip.length} file!\n\nMode: ${modeGabung ? 'Gabung (Guru Unik)' : 'Lengkap (Semua Supervisi)'}\nFile diurutkan berdasarkan nomor urut.`);
+      const jumlahA_hasil = guruUntukZip.filter(g => g.template === "A").length;
+      const jumlahB_hasil = guruUntukZip.filter(g => g.template === "B").length;
+      
+      alert(
+        `✅ Berhasil download!\n\n` +
+        `Mode: ${modeLengkap ? 'LENGKAP (Semua Terpisah)' : 'GABUNG (Guru Unik)'}\n` +
+        `Template A: ${jumlahA_hasil} file\n` +
+        `Template B: ${jumlahB_hasil} file\n` +
+        `Total: ${guruUntukZip.length} file\n\n` +
+        `File diurutkan berdasarkan nomor urut.`
+      );
     } catch (e) {
       alert("Terjadi kesalahan saat membuat ZIP: " + e.message);
       console.error(e);
