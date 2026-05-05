@@ -3799,6 +3799,11 @@ export default function App({ sesi, onLogout }) {
     const jumlahA = daftarGuru.filter(g => g.template === "A").length;
     const jumlahB = daftarGuru.filter(g => g.template === "B").length;
     
+    console.log("📊 Total data di database:");
+    console.log("Template A:", jumlahA);
+    console.log("Template B:", jumlahB);
+    console.log("Total:", jumlahA + jumlahB);
+    
     // Tanyakan mode download
     const pilihan = confirm(
       "📦 Download ZIP - Pilih Mode:\n\n" +
@@ -3816,6 +3821,8 @@ export default function App({ sesi, onLogout }) {
     
     const modeLengkap = pilihan; // true = lengkap, false = gabung
     
+    console.log("🔘 Mode dipilih:", modeLengkap ? "LENGKAP" : "GABUNG");
+    
     setLoading(true);
     try {
       const zip = new JSZip();
@@ -3826,9 +3833,12 @@ export default function App({ sesi, onLogout }) {
       
       if (modeLengkap) {
         // Mode Lengkap: Semua supervisi terpisah (TIDAK DIGABUNG)
+        console.log("✅ Mode LENGKAP: Mengambil semua data tanpa penggabungan");
         guruUntukZip = [...daftarGuru];
+        console.log("📦 Jumlah file yang akan dibuat:", guruUntukZip.length);
       } else {
         // Mode Gabung: Kelompokkan per nama DAN template, ambil rata-rata
+        console.log("🔄 Mode GABUNG: Mengelompokkan dan merata-rata data");
         const grouped = {};
         daftarGuru.forEach((g) => {
           const namaKey = `${g.nama.trim().toLowerCase()}_${g.template}`; // Gabung nama + template
@@ -3858,6 +3868,8 @@ export default function App({ sesi, onLogout }) {
           }
           grouped[namaKey].supervisi.push(g);
         });
+        
+        console.log("📊 Jumlah grup unik:", Object.keys(grouped).length);
         
         // Hitung rata-rata untuk setiap guru
         guruUntukZip = Object.values(grouped).map(g => {
@@ -3922,6 +3934,7 @@ export default function App({ sesi, onLogout }) {
             };
           }
         });
+        console.log("📦 Jumlah file yang akan dibuat:", guruUntukZip.length);
       }
       
       // Urutkan berdasarkan nomor urut
@@ -3935,6 +3948,8 @@ export default function App({ sesi, onLogout }) {
         if (!noA && noB) return 1;
         return a.nama.localeCompare(b.nama);
       });
+      
+      console.log("🔢 Data sudah diurutkan berdasarkan nomor urut");
       
       // Generate file dengan prefix nomor urut
       let counterA = 1;
@@ -3966,6 +3981,11 @@ export default function App({ sesi, onLogout }) {
       
       const jumlahA_hasil = guruUntukZip.filter(g => g.template === "A").length;
       const jumlahB_hasil = guruUntukZip.filter(g => g.template === "B").length;
+      
+      console.log("✅ ZIP berhasil dibuat!");
+      console.log("Template A:", jumlahA_hasil, "file");
+      console.log("Template B:", jumlahB_hasil, "file");
+      console.log("Total:", guruUntukZip.length, "file");
       
       alert(
         `✅ Berhasil download!\n\n` +
