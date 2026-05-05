@@ -49,6 +49,111 @@ const NAMA_BULAN = [
   "Juli", "Agustus", "September", "Oktober", "November", "Desember"
 ];
 
+// ── Database Nomor Urut Guru (dari Excel) ──
+const DATABASE_NOMOR_URUT = {
+  "Sri Apriyanti Hendyarini, S.Kom.": "001",
+  "Mochamad Ridwan, S.Kom.": "002",
+  "Suci Sundari, S.Pd.": "003",
+  "Wahyu Kusuma Ningrum, SE.MM.": "004",
+  "Yuli Listiani, S.Pd.": "005",
+  "Drs. Budiyono, M.Si.": "006",
+  "Mochamad Imam Anshori, S.Sos.": "007",
+  "Asep Suryadi, M.Pd.": "008",
+  "Dany Benuardi, S.Kom.": "009",
+  "Suseno Khaidir, S.Kom.": "010",
+  "Rian Anugrah, S.Kom.": "011",
+  "Bowo Dwi Darmawan, S.Pd.": "012",
+  "Rini Prastiwyati, S.Pd.": "013",
+  "Nur Hidayah, SE.": "014",
+  "Eros Rohati, S.Pd.": "015",
+  "Sarah Setiawati, M.Si.": "016",
+  "Dinda Farila, S.Ds.": "017",
+  "Aldiansyah. S.M": "018",
+  "Pandu Rachmawan, S.Kom.": "019",
+  "Tiar Rizaldi, S.Pd.": "020",
+  "Kustiyana, S.Pd.I.": "021",
+  "Januar Rachmat Setia Aji, S.Pd.": "022",
+  "Detty Yuniarti, S.Pd.": "023",
+  "Kusmiati Umar Syarif, Ph.D.": "024",
+  "Angga Surya": "025",
+  "Yuliansyah Sadikin, S.Sos.I": "026",
+  "Yosina Hitus, S.Th., S.Pd.": "027",
+  "Alisti Agatha, S.Pd.": "028",
+  "Annisa Tayari Zahra, S.Pd.": "029",
+  "Irma Rizky, S.S.": "030",
+  "Murni Hariyani, S.Pd.": "031",
+  "Raden Susan Hoerunnisa, S.Pd": "032",
+  "Putri Navisa Awaliah, S.Pd.": "033",
+  "Gunawan, S.Kom.": "034",
+  "Nurhayati, S.ST.Ars.": "035",
+  "Rani Azahra, SE.": "036",
+  "Rivaldi Wahyu Pratama": "037",
+  "Drimas Adhitia": "038",
+  "Salwa Alia": "039",
+  "Muhammad Adziqri Ramadhan": "040",
+  "Muhammad Bintang Firdaus": "041",
+  "Rian": "042",
+  "Peba Febrian Syaihu": "043",
+  "Muhamad Bayu Pratama": "044",
+  "Sutarsih": "045",
+  "Siti Fatimah": "046",
+  "Jati Prihatmoko": "047",
+  "Risa Ariani": "048",
+  "Harlina, SE.": "049",
+  "Sakawuni Maghfira Firdestia Bunga, S.Hum.": "050",
+  "Selvi Amelia Putri": "051",
+  "Asep Suptadji": "052",
+  "Aji": "053",
+  "Iwan Sarwani": "054",
+  "Asep Saepudin": "055",
+};
+
+// ── Fungsi: Cari Nomor Urut Berdasarkan Nama ──
+function cariNoUrut(namaGuru) {
+  if (!namaGuru || namaGuru.trim() === "") return null;
+  
+  const namaClean = namaGuru.trim();
+  
+  // 1. Cari exact match (case insensitive)
+  const exactMatch = Object.keys(DATABASE_NOMOR_URUT).find(
+    key => key.toLowerCase() === namaClean.toLowerCase()
+  );
+  if (exactMatch) return DATABASE_NOMOR_URUT[exactMatch];
+  
+  // 2. Cari partial match (nama tanpa gelar)
+  const namaTanpaGelar = namaClean
+    .replace(/,?\s*(S\.Kom\.|S\.Pd\.|SE\.|M\.Si\.|S\.Sos\.|M\.Pd\.|S\.Ds\.|S\.Pd\.I\.|Ph\.D\.|S\.Sos\.I|S\.Th\.|S\.S\.|S\.ST\.Ars\.|MM\.|Drs\.|S\.M)\.?/gi, '')
+    .trim();
+  
+  const partialMatch = Object.keys(DATABASE_NOMOR_URUT).find(key => {
+    const keyTanpaGelar = key
+      .replace(/,?\s*(S\.Kom\.|S\.Pd\.|SE\.|M\.Si\.|S\.Sos\.|M\.Pd\.|S\.Ds\.|S\.Pd\.I\.|Ph\.D\.|S\.Sos\.I|S\.Th\.|S\.S\.|S\.ST\.Ars\.|MM\.|Drs\.|S\.M)\.?/gi, '')
+      .trim();
+    return keyTanpaGelar.toLowerCase() === namaTanpaGelar.toLowerCase();
+  });
+  if (partialMatch) return DATABASE_NOMOR_URUT[partialMatch];
+  
+  // 3. Cari berdasarkan nama depan + nama belakang
+  const words = namaTanpaGelar.split(/\s+/);
+  if (words.length >= 2) {
+    const namaDepanBelakang = `${words[0]} ${words[words.length - 1]}`.toLowerCase();
+    const fuzzyMatch = Object.keys(DATABASE_NOMOR_URUT).find(key => {
+      const keyWords = key
+        .replace(/,?\s*(S\.Kom\.|S\.Pd\.|SE\.|M\.Si\.|S\.Sos\.|M\.Pd\.|S\.Ds\.|S\.Pd\.I\.|Ph\.D\.|S\.Sos\.I|S\.Th\.|S\.S\.|S\.ST\.Ars\.|MM\.|Drs\.|S\.M)\.?/gi, '')
+        .trim()
+        .split(/\s+/);
+      if (keyWords.length >= 2) {
+        const keyDepanBelakang = `${keyWords[0]} ${keyWords[keyWords.length - 1]}`.toLowerCase();
+        return keyDepanBelakang === namaDepanBelakang;
+      }
+      return false;
+    });
+    if (fuzzyMatch) return DATABASE_NOMOR_URUT[fuzzyMatch];
+  }
+  
+  return null;
+}
+
 
 // ============================================================
 // PENGATURAN PDF — semua teks, warna, font bisa diubah dari UI
@@ -839,8 +944,22 @@ async function cetakRekapA(guruListA, catatanPerGuru, kesimpulan, ps) {
     return;
   }
 
+  // Urutkan berdasarkan nomor urut sebelum diproses
+  const guruTerurut = [...guruListA].sort((a, b) => {
+    const noA = a.noUrut || "";
+    const noB = b.noUrut || "";
+    if (noA && noB) {
+      return noA.localeCompare(noB);
+    }
+    // Jika salah satu tidak punya noUrut, yang punya noUrut di depan
+    if (noA && !noB) return -1;
+    if (!noA && noB) return 1;
+    // Jika keduanya tidak punya noUrut, urutkan berdasarkan nama
+    return a.nama.localeCompare(b.nama);
+  });
+
   // Data guru sudah diproses (gabung atau lengkap) dari modal
-  const dataGuru = guruListA.map((g, i) => ({
+  const dataGuru = guruTerurut.map((g, i) => ({
     no: i + 1,
     nuptk: g.nuptk || "-",
     nama: g.nama,
@@ -882,8 +1001,22 @@ async function cetakRekapB(guruListB, catatanPerGuru, kesimpulan, ps) {
     return;
   }
 
+  // Urutkan berdasarkan nomor urut sebelum diproses
+  const guruTerurut = [...guruListB].sort((a, b) => {
+    const noA = a.noUrut || "";
+    const noB = b.noUrut || "";
+    if (noA && noB) {
+      return noA.localeCompare(noB);
+    }
+    // Jika salah satu tidak punya noUrut, yang punya noUrut di depan
+    if (noA && !noB) return -1;
+    if (!noA && noB) return 1;
+    // Jika keduanya tidak punya noUrut, urutkan berdasarkan nama
+    return a.nama.localeCompare(b.nama);
+  });
+
   // Data guru sudah diproses (gabung atau lengkap) dari modal
-  const dataGuru = guruListB.map((g, i) => ({
+  const dataGuru = guruTerurut.map((g, i) => ({
     no: i + 1,
     nuptk: g.nuptk || "-",
     nama: g.nama,
@@ -1635,6 +1768,7 @@ function FormA({ guru, indikator, onSimpan, onClose, dataPredikat }) {
   const [adaPerubahan, setAdaPerubahan] = useState(false); // Track perubahan
   const [skorBerubah, setSkorBerubah] = useState({}); // Track skor yang baru diubah
   const [info, setInfo] = useState({
+    noUrut: guru?.noUrut || "",
     nuptk: guru?.nuptk || "",
     nama: guru?.nama || "",
     mapel: guru?.mapel || "",
@@ -1714,8 +1848,39 @@ function FormA({ guru, indikator, onSimpan, onClose, dataPredikat }) {
         {/* A. Identitas */}
         <SectionCard judul="A. Identitas Guru">
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "9px" }}>
+            <div style={{ gridColumn: "1 / -1", display: "flex", gap: "9px", alignItems: "flex-end" }}>
+              <div style={{ flex: 1 }}>
+                <InputField label="Nama Guru" value={info.nama} onChange={v => { setInfo({ ...info, nama: v }); setAdaPerubahan(true); }} placeholder="Nama lengkap + gelar" />
+              </div>
+              <button 
+                onClick={() => {
+                  const noUrut = cariNoUrut(info.nama);
+                  if (noUrut) {
+                    setInfo({ ...info, noUrut });
+                    setAdaPerubahan(true);
+                    alert(`✅ Nomor urut ditemukan: ${noUrut}`);
+                  } else {
+                    alert("❌ Nama guru tidak ditemukan di database.\n\nPastikan nama sesuai dengan format:\n- Nama lengkap dengan gelar\n- Contoh: Sri Apriyanti Hendyarini, S.Kom.");
+                  }
+                }}
+                style={{ 
+                  background: "#10b981", 
+                  color: "#fff", 
+                  border: "none", 
+                  borderRadius: "8px", 
+                  padding: "9px 14px", 
+                  cursor: "pointer", 
+                  fontWeight: 700, 
+                  fontSize: "12px",
+                  height: "38px",
+                  flexShrink: 0
+                }}
+              >
+                🔍 Cari No Urut
+              </button>
+            </div>
+            <InputField label="No Urut" value={info.noUrut} onChange={v => { setInfo({ ...info, noUrut: v }); setAdaPerubahan(true); }} placeholder="001" />
             <InputField label="NUPTK" value={info.nuptk} onChange={v => { setInfo({ ...info, nuptk: v }); setAdaPerubahan(true); }} placeholder="Nomor Unik Pendidik" />
-            <InputField label="Nama Guru" value={info.nama} onChange={v => { setInfo({ ...info, nama: v }); setAdaPerubahan(true); }} placeholder="Nama lengkap + gelar" />
             <InputField label="Mata Pelajaran" value={info.mapel} onChange={v => { setInfo({ ...info, mapel: v }); setAdaPerubahan(true); }} placeholder="Nama mata pelajaran" />
             <InputField label="Kelas/Program" value={info.kelas} onChange={v => { setInfo({ ...info, kelas: v }); setAdaPerubahan(true); }} placeholder="Mis: X PPLG 1" />
             <InputField label="Supervisor" value={info.supervisor} onChange={v => { setInfo({ ...info, supervisor: v }); setAdaPerubahan(true); }} placeholder="Nama supervisor" />
@@ -1818,6 +1983,7 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
   const [setSemuaDiklik, setSetSemuaDiklik] = useState({}); // Track tombol Set semua yang diklik
   const [skorBerubah, setSkorBerubah] = useState({}); // Track skor yang baru diubah
   const [info, setInfo] = useState({
+    noUrut: guru?.noUrut || "",
     nuptk: guru?.nuptk || "",
     nama: guru?.nama || "",
     mapel: guru?.mapel || "",
@@ -1890,8 +2056,39 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
         {/* A. Identitas */}
         <SectionCard judul="A. Identitas" warna="hijau">
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "9px" }}>
+            <div style={{ gridColumn: "1 / -1", display: "flex", gap: "9px", alignItems: "flex-end" }}>
+              <div style={{ flex: 1 }}>
+                <InputField label="Nama Guru" value={info.nama} onChange={v => { setInfo({ ...info, nama: v }); setAdaPerubahan(true); }} placeholder="Nama lengkap + gelar" />
+              </div>
+              <button 
+                onClick={() => {
+                  const noUrut = cariNoUrut(info.nama);
+                  if (noUrut) {
+                    setInfo({ ...info, noUrut });
+                    setAdaPerubahan(true);
+                    alert(`✅ Nomor urut ditemukan: ${noUrut}`);
+                  } else {
+                    alert("❌ Nama guru tidak ditemukan di database.\n\nPastikan nama sesuai dengan format:\n- Nama lengkap dengan gelar\n- Contoh: Sri Apriyanti Hendyarini, S.Kom.");
+                  }
+                }}
+                style={{ 
+                  background: "#10b981", 
+                  color: "#fff", 
+                  border: "none", 
+                  borderRadius: "8px", 
+                  padding: "9px 14px", 
+                  cursor: "pointer", 
+                  fontWeight: 700, 
+                  fontSize: "12px",
+                  height: "38px",
+                  flexShrink: 0
+                }}
+              >
+                🔍 Cari No Urut
+              </button>
+            </div>
+            <InputField label="No Urut" value={info.noUrut} onChange={v => { setInfo({ ...info, noUrut: v }); setAdaPerubahan(true); }} placeholder="001" />
             <InputField label="NUPTK" value={info.nuptk} onChange={v => { setInfo({ ...info, nuptk: v }); setAdaPerubahan(true); }} placeholder="Nomor Unik Pendidik" />
-            <InputField label="Nama Guru" value={info.nama} onChange={v => { setInfo({ ...info, nama: v }); setAdaPerubahan(true); }} placeholder="Nama lengkap + gelar" />
             <InputField label="Mapel/Jurusan" value={info.mapel} onChange={v => { setInfo({ ...info, mapel: v }); setAdaPerubahan(true); }} placeholder="Nama mapel/jurusan" />
             <InputField label="Kelas" value={info.kelas} onChange={v => { setInfo({ ...info, kelas: v }); setAdaPerubahan(true); }} placeholder="Mis: X PPLG 1" />
             <InputField label="Supervisor" value={info.supervisor} onChange={v => { setInfo({ ...info, supervisor: v }); setAdaPerubahan(true); }} placeholder="Nama supervisor" />
@@ -1961,7 +2158,6 @@ function FormB({ guru, aspekB, onSimpan, onClose, dataPredikat }) {
             );
           })}
         </div>
-
         {/* C. Rekap Nilai */}
         <SectionCard judul="C. Rekap Nilai Supervisi" warna="hijau">
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
@@ -2093,6 +2289,7 @@ function ModalRekapYayasan({ semuaGuru, dataPredikat, pengaturanPDF, onClose, on
         grouped[namaKey] = {
           nama: g.nama,
           nuptk: g.nuptk || "-",
+          noUrut: g.noUrut || "", // Ambil noUrut dari data pertama
           mapel: g.mapel,
           template: g.template,
           supervisi: [],
@@ -2254,7 +2451,7 @@ function ModalRekapYayasan({ semuaGuru, dataPredikat, pengaturanPDF, onClose, on
               onClick={async () => {
                 if (!guruA.length) return alert("Belum ada data Template A!");
                 setLoadingA(true);
-                try { await cetakRekapA(modeGabung ? guruA : guruALengkap, catatanA, kesimpulanA, pengaturanPDF); } catch { alert("Gagal unduh laporan A."); }
+                try { await cetakRekapA(guruA, catatanA, kesimpulanA, pengaturanPDF); } catch { alert("Gagal unduh laporan A."); }
                 setLoadingA(false);
               }}
               disabled={loadingA}
@@ -2296,7 +2493,7 @@ function ModalRekapYayasan({ semuaGuru, dataPredikat, pengaturanPDF, onClose, on
               onClick={async () => {
                 if (!guruB.length) return alert("Belum ada data Template B!");
                 setLoadingB(true);
-                try { await cetakRekapB(modeGabung ? guruB : guruBLengkap, catatanB, kesimpulanB, pengaturanPDF); } catch { alert("Gagal unduh laporan B."); }
+                try { await cetakRekapB(guruB, catatanB, kesimpulanB, pengaturanPDF); } catch { alert("Gagal unduh laporan B."); }
                 setLoadingB(false);
               }}
               disabled={loadingB}
@@ -3409,6 +3606,57 @@ export default function App({ sesi, onLogout }) {
     alert(`✅ Berhasil sinkronkan catatan ke ${jumlahUpdate} guru Template B!`);
   };
 
+  // ── Auto-Update Nomor Urut Semua Guru ──
+  const autoUpdateNoUrut = async () => {
+    const konfirmasi = confirm(
+      "🔄 Auto-Update Nomor Urut Semua Guru?\n\n" +
+      "Sistem akan otomatis mencocokkan nama guru dengan database (55 guru) dan mengisi nomor urut.\n\n" +
+      "⚠️ Nomor urut yang sudah ada akan ditimpa jika nama cocok dengan database.\n\n" +
+      "Lanjutkan?"
+    );
+    
+    if (!konfirmasi) return;
+    
+    let jumlahDitemukan = 0;
+    let jumlahTidakDitemukan = 0;
+    const guruTidakDitemukan = [];
+    
+    const guruBaru = daftarGuru.map(guru => {
+      // Cari nomor urut berdasarkan nama
+      const noUrut = cariNoUrut(guru.nama);
+      
+      if (noUrut) {
+        jumlahDitemukan++;
+        return { ...guru, noUrut };
+      } else {
+        jumlahTidakDitemukan++;
+        guruTidakDitemukan.push(guru.nama);
+        return guru; // Tidak diubah jika tidak ditemukan
+      }
+    });
+    
+    await simpanGuru(guruBaru);
+    
+    // Tampilkan hasil
+    let pesan = `✅ Auto-Update Selesai!\n\n`;
+    pesan += `📊 Hasil:\n`;
+    pesan += `• Ditemukan: ${jumlahDitemukan} guru\n`;
+    pesan += `• Tidak ditemukan: ${jumlahTidakDitemukan} guru\n\n`;
+    
+    if (jumlahTidakDitemukan > 0) {
+      pesan += `⚠️ Guru yang tidak ditemukan:\n`;
+      guruTidakDitemukan.slice(0, 10).forEach(nama => {
+        pesan += `• ${nama}\n`;
+      });
+      if (guruTidakDitemukan.length > 10) {
+        pesan += `... dan ${guruTidakDitemukan.length - 10} lainnya\n`;
+      }
+      pesan += `\n💡 Tip: Pastikan nama ditulis lengkap dengan gelar sesuai database.`;
+    }
+    
+    alert(pesan);
+  };
+
   // ── Tampilkan notifikasi tersimpan ──
   const tampilNotif = () => {
     setNotifSimpan(true);
@@ -3545,26 +3793,171 @@ export default function App({ sesi, onLogout }) {
 
   // ── Unduh Semua File sebagai ZIP ──
   const unduhSemuaZip = async () => {
-    if (guruTerfilter.length === 0) return alert("Tidak ada data guru untuk diunduh!");
+    if (daftarGuru.length === 0) return alert("Tidak ada data guru untuk diunduh!");
+    
+    // Tanyakan mode download
+    const pilihan = confirm(
+      "📦 Download ZIP - Pilih Mode:\n\n" +
+      "✅ OK = Mode GABUNG (Guru Unik)\n" +
+      "   → 1 file per guru (rata-rata jika ada supervisi ganda)\n" +
+      "   → File diurutkan berdasarkan nomor urut\n\n" +
+      "❌ CANCEL = Mode LENGKAP (Semua Supervisi)\n" +
+      "   → Semua supervisi diunduh terpisah\n" +
+      "   → File diurutkan berdasarkan nomor urut + tanggal\n\n" +
+      "Pilih mode download:"
+    );
+    
+    const modeGabung = pilihan; // true = gabung, false = lengkap
     
     setLoading(true);
     try {
       const zip = new JSZip();
       const folderA = zip.folder("Template A");
       const folderB = zip.folder("Template B");
-
-      for (const guru of guruTerfilter) {
+      
+      let guruUntukZip = [];
+      
+      if (modeGabung) {
+        // Mode Gabung: Kelompokkan per nama, ambil rata-rata
+        const grouped = {};
+        daftarGuru.forEach((g) => {
+          const namaKey = g.nama.trim().toLowerCase();
+          if (!grouped[namaKey]) {
+            grouped[namaKey] = {
+              nama: g.nama,
+              nuptk: g.nuptk,
+              noUrut: g.noUrut || "",
+              mapel: g.mapel,
+              kelas: g.kelas,
+              tanggal: g.tanggal,
+              supervisor: g.supervisor,
+              template: g.template,
+              supervisi: [],
+              // Template A
+              kekuatan: g.kekuatan,
+              areaPerbaikan: g.areaPerbaikan,
+              rekomendasi: g.rekomendasi,
+              catatanSingkat: g.catatanSingkat,
+              // Template B
+              catatanB: g.catatanB,
+              checkSudahB: g.checkSudahB,
+              checkPerluB: g.checkPerluB,
+              catatanSudahB: g.catatanSudahB,
+              catatanPerluB: g.catatanPerluB,
+            };
+          }
+          grouped[namaKey].supervisi.push(g);
+        });
+        
+        // Hitung rata-rata untuk setiap guru
+        guruUntukZip = Object.values(grouped).map(g => {
+          const jumlahSupervisi = g.supervisi.length;
+          
+          if (g.template === "A") {
+            // Rata-rata skor per indikator
+            const skorRataRata = {};
+            const catatanKhusus = {};
+            
+            indikatorA.forEach(ind => {
+              const totalSkor = g.supervisi.reduce((acc, s) => acc + (s.skor?.[ind.id] || 0), 0);
+              skorRataRata[ind.id] = Math.round(totalSkor / jumlahSupervisi);
+              
+              // Ambil catatan dari supervisi terakhir
+              if (g.supervisi[jumlahSupervisi - 1].catatanKhusus?.[ind.id]) {
+                catatanKhusus[ind.id] = g.supervisi[jumlahSupervisi - 1].catatanKhusus[ind.id];
+              }
+            });
+            
+            const total = Object.values(skorRataRata).reduce((a, b) => a + b, 0);
+            
+            return {
+              ...g,
+              skor: skorRataRata,
+              catatanKhusus,
+              total,
+              persen: parseFloat(((total / MAKS_A) * 100).toFixed(2)),
+            };
+          } else {
+            // Template B - rata-rata skor per indikator
+            const skorRataRata = {};
+            const catatanKhusus = {};
+            
+            aspekB.forEach(aspek => {
+              aspek.indikator.forEach((ind, idx) => {
+                const key = `${aspek.id}_${idx}`;
+                const totalSkor = g.supervisi.reduce((acc, s) => {
+                  let val = s.skor?.[key] || 0;
+                  if (typeof val === 'string') val = parseFloat(val.replace(",", ".")) || 0;
+                  return acc + val;
+                }, 0);
+                skorRataRata[key] = (totalSkor / jumlahSupervisi).toFixed(1);
+              });
+              
+              // Ambil catatan dari supervisi terakhir
+              if (g.supervisi[jumlahSupervisi - 1].catatanKhusus?.[aspek.id]) {
+                catatanKhusus[aspek.id] = g.supervisi[jumlahSupervisi - 1].catatanKhusus[aspek.id];
+              }
+            });
+            
+            const total = Object.values(skorRataRata).reduce((acc, val) => {
+              return acc + (parseFloat(val) || 0);
+            }, 0);
+            
+            return {
+              ...g,
+              skor: skorRataRata,
+              catatanKhusus,
+              total: Math.round(total * 10) / 10,
+              persen: parseFloat(((total / MAKS_B) * 100).toFixed(2)),
+            };
+          }
+        });
+      } else {
+        // Mode Lengkap: Semua supervisi
+        guruUntukZip = [...daftarGuru];
+      }
+      
+      // Urutkan berdasarkan nomor urut
+      guruUntukZip.sort((a, b) => {
+        const noA = a.noUrut || "";
+        const noB = b.noUrut || "";
+        if (noA && noB) {
+          return noA.localeCompare(noB);
+        }
+        if (noA && !noB) return -1;
+        if (!noA && noB) return 1;
+        return a.nama.localeCompare(b.nama);
+      });
+      
+      // Generate file dengan prefix nomor urut
+      let counterA = 1;
+      let counterB = 1;
+      
+      for (const guru of guruUntukZip) {
+        const prefix = guru.noUrut ? `${guru.noUrut}_` : `${guru.template === "A" ? counterA++ : counterB++}_`;
+        
         if (guru.template === "A") {
           const res = await cetakPDF_A(guru, indikatorA, pengaturanPDF, true);
-          if (res && res.blob) folderA.file(res.filename, res.blob);
+          if (res && res.blob) {
+            const namaFile = `${prefix}${guru.nama.replace(/[^a-zA-Z0-9]/g, '_')}.docx`;
+            folderA.file(namaFile, res.blob);
+          }
         } else if (guru.template === "B") {
           const res = await cetakPDF_B(guru, aspekB, pengaturanPDF, true);
-          if (res && res.blob) folderB.file(res.filename, res.blob);
+          if (res && res.blob) {
+            const namaFile = `${prefix}${guru.nama.replace(/[^a-zA-Z0-9]/g, '_')}.docx`;
+            folderB.file(namaFile, res.blob);
+          }
         }
       }
       
       const content = await zip.generateAsync({ type: "blob" });
-      saveAs(content, "Rekap_Semua_Supervisi.zip");
+      const namaZip = modeGabung 
+        ? `Rekap_Supervisi_Gabung_${guruUntukZip.length}guru.zip`
+        : `Rekap_Supervisi_Lengkap_${guruUntukZip.length}supervisi.zip`;
+      saveAs(content, namaZip);
+      
+      alert(`✅ Berhasil download ${guruUntukZip.length} file!\n\nMode: ${modeGabung ? 'Gabung (Guru Unik)' : 'Lengkap (Semua Supervisi)'}\nFile diurutkan berdasarkan nomor urut.`);
     } catch (e) {
       alert("Terjadi kesalahan saat membuat ZIP: " + e.message);
       console.error(e);
@@ -3582,9 +3975,22 @@ export default function App({ sesi, onLogout }) {
   const guruTerfilter = [...daftarGuru].reverse().filter(g => {
     const cocokTeks = g.nama.toLowerCase().includes(cariTeks.toLowerCase())
       || g.mapel.toLowerCase().includes(cariTeks.toLowerCase())
-      || (g.nuptk && g.nuptk.toLowerCase().includes(cariTeks.toLowerCase()));
+      || (g.nuptk && g.nuptk.toLowerCase().includes(cariTeks.toLowerCase()))
+      || (g.noUrut && g.noUrut.toLowerCase().includes(cariTeks.toLowerCase()));
     const cocokTmpl = filterTmpl === "Semua" || g.template === filterTmpl;
     return cocokTeks && cocokTmpl;
+  }).sort((a, b) => {
+    // Urutkan berdasarkan noUrut jika ada
+    const noA = a.noUrut || "";
+    const noB = b.noUrut || "";
+    if (noA && noB) {
+      return noA.localeCompare(noB);
+    }
+    // Jika salah satu tidak punya noUrut, yang punya noUrut di depan
+    if (noA && !noB) return -1;
+    if (!noA && noB) return 1;
+    // Jika keduanya tidak punya noUrut, urutkan berdasarkan nama
+    return a.nama.localeCompare(b.nama);
   });
 
   // ── Logika Pagination ──
@@ -3706,6 +4112,10 @@ export default function App({ sesi, onLogout }) {
               <button onClick={sinkronkanCatatanB} style={{ background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.4)", color: "#fff", borderRadius: "8px", padding: "8px 12px", cursor: "pointer", fontWeight: 600, fontSize: "12px" }}>
                 🔄 Sync Catatan B
               </button>
+              {/* Auto-Update Nomor Urut */}
+              <button onClick={autoUpdateNoUrut} style={{ background: "rgba(251,191,36,0.2)", border: "1px solid rgba(251,191,36,0.4)", color: "#fde68a", borderRadius: "8px", padding: "8px 12px", cursor: "pointer", fontWeight: 600, fontSize: "12px" }}>
+                🔢 Auto No Urut
+              </button>
               {/* Tambah Guru */}
               <button onClick={() => { setIndexGuru(null); setModal("pilih"); }} style={{ background: "#fff", border: "none", color: "#1e3a5f", borderRadius: "8px", padding: "8px 12px", cursor: "pointer", fontWeight: 700, fontSize: "12px" }}>
                 + Tambah Guru
@@ -3797,10 +4207,10 @@ export default function App({ sesi, onLogout }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12.5px", minWidth: "680px" }}>
               <thead>
                 <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
-                  {["No", "Nama Guru", "Mata Pelajaran", "Tmpl", "Tgl Supervisi", "Skor", "Predikat", "Aksi"].map(h => (
+                  {["No", "No Urut", "Nama Guru", "Mata Pelajaran", "Tmpl", "Tgl Supervisi", "Skor", "Predikat", "Aksi"].map(h => (
                     <th key={h} style={{
                       padding: "10px 12px",
-                      textAlign: ["No", "Tmpl", "Skor", "Predikat", "Aksi"].includes(h) ? "center" : "left",
+                      textAlign: ["No", "No Urut", "Tmpl", "Skor", "Predikat", "Aksi"].includes(h) ? "center" : "left",
                       color: "#64748b", fontWeight: 600, fontSize: "11.5px",
                     }}>
                       {h}
@@ -3825,6 +4235,9 @@ export default function App({ sesi, onLogout }) {
                       onMouseLeave={e => e.currentTarget.style.background = ""}
                     >
                       <td style={{ padding: "10px 12px", color: "#94a3b8", fontWeight: 600, textAlign: "center" }}>{indexAwal + i + 1}</td>
+                      <td style={{ padding: "10px 12px", color: "#1e293b", fontWeight: 700, textAlign: "center", fontSize: "13px" }}>
+                        {g.noUrut || "—"}
+                      </td>
                       <td style={{ padding: "10px 12px", fontWeight: 700, color: "#1e293b" }}>
                         <div style={{ fontSize: "10.5px", color: "#94a3b8", fontWeight: 500, marginBottom: "1px" }}>{g.nuptk || "—"}</div>
                         {g.nama}
